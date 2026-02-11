@@ -1,14 +1,12 @@
 """
-Visualize trained Battery DQN Agent in RWARE environment
+Visualize trained agent in RWARE environment.
 
-Shows the agent in a graphical window with:
-  - Battery level bar (green/yellow/red)
-  - Charger station (yellow with lightning bolt)
-  - Real-time stats (steps, pickups, deliveries)
+Shows the agent in a graphical window with battery level bar,
+charger station, and real-time stats.
 
 Usage:
-    python visualize.py
-    python visualize.py --model models/battery_dqn_best.pt --episodes 5
+    python visualize.py --algo dqn
+    python visualize.py --algo ppo --model models/ppo_best.pt
 """
 
 import argparse
@@ -20,8 +18,11 @@ import gymnasium as gym
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "1"
 
-from envs.battery_wrapper import BatteryWrapper, make_battery_warehouse
-from agents.simple_dqn_agent import SimpleDQNAgent
+from envs.warehouse import make_env
+from agents.dqn import DQNAgent
+from agents.ppo import PPOAgent
+from agents.sac import SACAgent
+from configs.config import ENV_CONFIG, BATTERY_CONFIG, ALGO_CONFIGS
 
 # Import pyglet for graphical rendering
 try:
@@ -277,213 +278,129 @@ class BatteryRenderer:
             self.closed = True
 
 
-def find_latest_model():
-    """Find the most recent model file."""
+def find_latest_model(algo="dqn"):
+    """Find the most recent model file for the given algorithm."""
     models_dir = Path("models")
-    # Look for all .pt files
-    models = list(models_dir.glob("*.pt"))
+    models = list(models_dir.glob(f"{algo}*.pt"))
+    if not models:
+        # Fallback: any .pt file
+        models = list(models_dir.glob("*.pt"))
     if not models:
         return None
-    # Prefer 'best' models first
-    best_models = [m for m in models if 'best' in m.name]
-    if best_models:
-        return max(best_models, key=lambda p: p.stat().st_mtime)
-    # Otherwise return most recent
+    best = [m for m in models if "best" in m.name]
+    if best:
+        return max(best, key=lambda p: p.stat().st_mtime)
     return max(models, key=lambda p: p.stat().st_mtime)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize trained agent")
+    parser.add_argument("--algo", type=str, default="dqn",
+                        choices=["dqn", "ppo", "sac"],
+                        help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
     parser.add_argument("--episodes", type=int, default=3,
                         help="Number of episodes to run")
     parser.add_argument("--delay", type=float, default=0.08,
                         help="Delay between frames (seconds)")
-    parser.add_argument("--epsilon", type=float, default=0.05,
-                        help="Exploration rate (0 = pure policy)")
-    parser.add_argument("--simple", action="store_true",
-                        help="Use simple config (matches training)")
     return parser.parse_args()
+
+
+AGENT_CLASSES = {"dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent}
 
 
 def visualize(args):
     """Run visualization."""
     if not PYGLET_AVAILABLE:
-        print("ERROR: pyglet is required for visualization")
-        print("Install with: pip install pyglet")
+        print("ERROR: pyglet is required. Install with: pip install pyglet")
         return
-    
-    print("=" * 60)
-    print("RWARE + BATTERY VISUALIZATION")
-    print("=" * 60)
-    
-    # Find model
-    model_path = args.model or find_latest_model()
-    if model_path is None:
-        print("❌ No trained model found in models/")
-        print("   Run train.py first!")
-        return
-    
-    print(f"Loading model: {model_path}")
 
-    # Load config based on mode
-    if args.simple:
-        from configs.simple_config import ENV_CONFIG, BATTERY_CONFIG, DQN_CONFIG
-        print("[OK] Using SIMPLE config (matches training)")
-        env_id = ENV_CONFIG['env_id']
-        max_steps = ENV_CONFIG['max_steps']
-        max_deliveries = ENV_CONFIG['max_deliveries']
-        max_battery = BATTERY_CONFIG['max_battery']
-        battery_drain = BATTERY_CONFIG['battery_drain']
-        charge_rate = BATTERY_CONFIG['charge_rate']
-        battery_threshold = BATTERY_CONFIG['battery_threshold']
-        charger_location = BATTERY_CONFIG['charger_location']
-        hidden_size = DQN_CONFIG['hidden_size']
-    else:
-        print("Using DEFAULT config (may not match training)")
-        env_id = None
-        max_steps = 500
-        max_deliveries = 1
-        max_battery = 100.0
-        battery_drain = 0.05
-        charge_rate = 20.0
-        battery_threshold = 15.0
-        charger_location = (0, 0)
-        hidden_size = 128
+    algo = args.algo
+    model_path = args.model or find_latest_model(algo)
+    if model_path is None:
+        print(f"No trained model found for {algo}. Run train.py --algo {algo} first!")
+        return
+
+    print(f"{'='*60}")
+    print(f"Visualizing {algo.upper()} | Model: {model_path}")
+    print(f"{'='*60}")
 
     # Create environment
-    from envs.battery_wrapper import make_battery_warehouse
-    env = make_battery_warehouse(
-        env_id=env_id,
-        max_battery=max_battery,
-        battery_drain=battery_drain,
-        charge_rate=charge_rate,
-        battery_threshold=battery_threshold,
-        charger_location=charger_location,
-        max_deliveries=max_deliveries,
-        max_steps=max_steps,
-    )
-    
-    # Create renderer
-    renderer = BatteryRenderer(env, charger_location=charger_location)
-    
-    print(f"\nGrid Size: {renderer.cols} x {renderer.rows}")
-    print(f"Charger: {charger_location}")
-    print("Window opened - watch the visualization!")
-    print("=" * 60)
-    
-    # Create agent and load model
+    env = make_env(ENV_CONFIG, BATTERY_CONFIG)
+    charger = tuple(BATTERY_CONFIG.get("charger_location", (0, 0)))
+    renderer = BatteryRenderer(env, charger_location=charger)
+
+    # Create and load agent
     device = torch.device("cpu")
-    
-    agent = SimpleDQNAgent(
-        env=env, 
-        device=device,
-        lr=1e-3, 
-        gamma=0.99, 
-        epsilon=0.0,
-        epsilon_min=0.0,
-        epsilon_decay=1.0,
-        batch_size=64, 
-        memory_size=50000,
-        hidden_size=hidden_size,
-    )
-    agent.q_network.load_state_dict(
-        torch.load(model_path, map_location=device))
-    agent.q_network.eval()
-    print("[OK] Model loaded\n")
-    
+    obs, _ = env.reset()
+    state = np.array(obs[0]) if isinstance(obs, tuple) else np.array(obs)
+    obs_size = state.shape[0]
+    n_actions = env.action_space.spaces[0].n if hasattr(env.action_space, "spaces") else env.action_space.n
+
+    agent = AGENT_CLASSES[algo](obs_size, n_actions, device, ALGO_CONFIGS[algo])
+    agent.load(str(model_path))
+    print("Model loaded\n")
+
     total_deliveries = 0
     total_pickups = 0
-    
+
     for episode in range(args.episodes):
         obs, info = env.reset()
         state = np.array(obs[0]) if isinstance(obs, tuple) else np.array(obs)
-        
         steps = 0
         pickups = 0
         deliveries = 0
-        
         print(f"Episode {episode + 1}/{args.episodes}")
-        
+
         while True:
-            # Select action
-            if np.random.random() < args.epsilon:
-                action = np.random.randint(5)
-            else:
-                with torch.no_grad():
-                    q_values = agent.q_network(
-                        torch.FloatTensor(state).unsqueeze(0).to(agent.device))
-                    action = q_values.argmax().item()
-            
+            action = agent.select_action(state, training=False)
             carrying_before = env.unwrapped.agents[0].carrying_shelf is not None
-            
-            # Handle multi-agent
-            if hasattr(env.action_space, 'spaces'):
-                n_agents = len(env.action_space.spaces)
-                actions = tuple([action] + [4 for _ in range(1, n_agents)])
+
+            if hasattr(env.action_space, "spaces"):
+                actions = tuple([action] + [0] * (len(env.action_space.spaces) - 1))
             else:
                 actions = action
-            
-            # Step
+
             next_obs, reward, terminated, truncated, info = env.step(actions)
             done = terminated or truncated
-            
-            # Debug: show position and action periodically
-            if steps % 50 == 0 or done:
-                agent_pos = env.unwrapped.agents[0].x, env.unwrapped.agents[0].y
-                print(f"    [Step {steps}] pos={agent_pos}, action={action}, term={terminated}, trunc={truncated}")
-            
             state = np.array(next_obs[0]) if isinstance(next_obs, tuple) else np.array(next_obs)
             steps += 1
-            
-            # Track events
+
             carrying_after = env.unwrapped.agents[0].carrying_shelf is not None
             if not carrying_before and carrying_after:
                 pickups += 1
                 total_pickups += 1
-            
-            new_deliveries = info.get('deliveries', 0)
-            if new_deliveries > deliveries:
-                total_deliveries += (new_deliveries - deliveries)
-                deliveries = new_deliveries
-            
-            battery = info.get('battery_levels', [100])[0]
-            
-            # Render
+
+            new_del = info.get("deliveries", 0)
+            if new_del > deliveries:
+                total_deliveries += new_del - deliveries
+                deliveries = new_del
+
+            battery = info.get("battery_levels", [100])[0]
+
             if not renderer.render(battery, steps, deliveries, pickups, carrying_after):
-                print("Window closed")
                 renderer.close()
                 env.close()
                 return
-            
+
             time.sleep(args.delay)
-            
             if done:
                 break
-        
-        # Episode summary
-        mission_complete = info.get('mission_complete', False)
-        battery_dead = info.get('battery_dead', False)
-        
-        status = "✅ SUCCESS" if mission_complete else "❌ BATTERY DEAD" if battery_dead else "⏰ TIMEOUT"
-        print(f"  {status} - Steps: {steps}, Pickups: {pickups}, Deliveries: {deliveries}")
-    
-    print("\n" + "=" * 60)
-    print(f"TOTAL: {total_pickups} pickups, {total_deliveries} deliveries")
-    print("=" * 60)
-    
-    print("Closing in 3 seconds...")
+
+        mc = info.get("mission_complete", False)
+        bd = info.get("battery_dead", False)
+        stuck = info.get("agent_stuck", False)
+        status = "SUCCESS" if mc else ("BATTERY DEAD" if bd else ("STUCK" if stuck else "TIMEOUT"))
+        print(f"  {status} | Steps: {steps} | Pickups: {pickups} | Deliveries: {deliveries}")
+
+    print(f"\nTotal: {total_pickups} pickups, {total_deliveries} deliveries")
     time.sleep(3)
-    
     try:
         renderer.close()
-    except:
+    except Exception:
         pass
-    try:
-        env.close()
-    except:
-        pass
+    env.close()
 
 
 if __name__ == "__main__":

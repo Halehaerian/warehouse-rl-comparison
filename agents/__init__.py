@@ -1,7 +1,8 @@
-"""
-RL Agents for Warehouse Environment
-"""
+"""RL Agents for Warehouse Environment."""
 
-from agents.simple_dqn_agent import SimpleDQNAgent
+from agents.base import BaseAgent
+from agents.dqn import DQNAgent
+from agents.ppo import PPOAgent
+from agents.sac import SACAgent
 
-__all__ = ["SimpleDQNAgent"]
+__all__ = ["BaseAgent", "DQNAgent", "PPOAgent", "SACAgent"]

@@ -1,7 +1,5 @@
-"""
-Custom Environment Wrappers
-"""
+"""Custom Environment Wrappers."""
 
-from envs.battery_wrapper import BatteryWrapper, make_battery_warehouse
+from envs.warehouse import WarehouseWrapper, make_env
 
-__all__ = ['BatteryWrapper', 'make_battery_warehouse']
+__all__ = ["WarehouseWrapper", "make_env"]

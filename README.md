@@ -1,42 +1,44 @@
-# Warehouse RL with Battery Management
+# Warehouse RL Comparison
 
-Train a DQN agent to complete deliveries in the RWARE (Robotic Warehouse) environment while managing battery levels.
+Compare DQN, PPO, and SAC on the RWARE (Robotic Warehouse) environment with battery management.
 
 ## Features
 
-- **Battery Management**: Agent must monitor battery and visit charger when low
-- **Mission Flow**: PICKUP shelf → DELIVER to goal → repeat
-- **Visual Feedback**: Graphical visualization with battery bar and charger station
-- **Prioritized Experience Replay**: Efficient learning from important experiences
+- **Three Algorithms**: DQN, PPO, SAC with a shared `BaseAgent` interface
+- **Battery Management**: Optional battery drain/recharge (kept modular for future use)
+- **Mission Flow**: SEEK shelf → PICKUP → DELIVER to goal → DROP
+- **Metrics**: Per-episode logging saved to JSON
+- **Visualization**: Pyglet-based renderer with battery bar, charger, and real-time stats
 
 ## Project Structure
 
 ```
 warehouse-rl-comparison/
-├── train.py              # Main training script
-├── visualize.py          # Graphical visualization
-├── envs/
-│   ├── battery_wrapper.py   # Battery wrapper for RWARE
-│   └── __init__.py
+├── train.py                  # CLI entry point
+├── visualize.py              # Graphical visualization
+├── configs/
+│   └── config.py             # All hyperparameters (env, battery, DQN, PPO, SAC)
 ├── agents/
-│   ├── dqn_agent.py         # DQN with PER
-│   └── __init__.py
+│   ├── base.py               # Abstract BaseAgent
+│   ├── dqn.py                # DQN (replay buffer + target network)
+│   ├── ppo.py                # PPO (actor-critic + GAE)
+│   └── sac.py                # SAC-Discrete (twin critics + entropy tuning)
+├── envs/
+│   └── warehouse.py          # RWARE wrapper with reward shaping + observations
+├── training/
+│   └── trainer.py            # Unified training loop for all algorithms
 ├── utils/
-│   ├── sum_tree.py          # SumTree for PER
-│   └── __init__.py
-├── models/                   # Saved model weights
-└── outputs/                  # Training metrics
+│   └── metrics.py            # MetricsCollector (JSON export)
+├── models/                   # Saved model weights (.pt)
+└── outputs/                  # Training metrics (.json)
 ```
 
 ## Installation
 
 ```bash
-# Create virtual environment
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/Mac
-
-# Install dependencies
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux/Mac
 pip install torch numpy gymnasium rware pyglet
 ```
 
@@ -45,89 +47,61 @@ pip install torch numpy gymnasium rware pyglet
 ### Training
 
 ```bash
-# Train with default settings
-python train.py
-
-# Train with custom settings
-python train.py --episodes 5000 --max_steps 500 --lr 0.001
-
-# Full options
-python train.py \
-    --env rware-tiny-1ag-v2 \
-    --episodes 3000 \
-    --max_steps 500 \
-    --max_deliveries 1 \
-    --battery_drain 0.05 \
-    --charge_rate 50.0 \
-    --lr 0.001 \
-    --gamma 0.99 \
-    --epsilon_decay 0.997
+python train.py --algo dqn               # Train DQN (default)
+python train.py --algo ppo               # Train PPO
+python train.py --algo sac               # Train SAC
+python train.py --algo all               # Train all three
+python train.py --algo dqn --episodes 5000  # Override episode count
 ```
 
 ### Visualization
 
 ```bash
-# Visualize with latest model
-python visualize.py
-
-# Visualize specific model
-python visualize.py --model models/battery_dqn_best.pt
-
-# Adjust speed and episodes
-python visualize.py --episodes 5 --delay 0.05 --epsilon 0.0
+python visualize.py --algo dqn            # Visualize DQN agent
+python visualize.py --algo ppo            # Visualize PPO agent
+python visualize.py --algo sac --episodes 5 --delay 0.05
+python visualize.py --model models/dqn_best.pt  # Specific model file
 ```
 
-## Environment Details
+## Environment
 
-### RWARE (Robotic Warehouse)
-- Grid-based warehouse environment
-- Agent actions: FORWARD, LEFT, RIGHT, TOGGLE (pickup/drop), NOOP
-- Goal: Pick up requested shelves and deliver to goal zones
+### RWARE
+- Grid-based warehouse with direction-based movement
+- Actions: NOOP, FORWARD, LEFT, RIGHT, TOGGLE_LOAD
+- Pick up requested shelves and deliver to goal zones
 
-### Battery Wrapper
-Extends RWARE with:
-- **Battery drain**: Loses charge each step
-- **Charger station**: Yellow tile where agent recharges
-- **Mission state machine**: Prevents exploit behaviors
-- **Reward shaping**: Encourages efficient delivery and smart charging
+### Extended Observations (12 extra dims)
+| Dims | Description |
+|------|-------------|
+| 2 | Agent position (normalized) |
+| 2 | Target position (shelf or goal, dynamic) |
+| 2 | Direction to target (dx, dy) |
+| 4 | Facing direction one-hot (UP/DOWN/LEFT/RIGHT) |
+| 1 | Carrying flag |
+| 1 | Battery level |
 
-### Observation Space
-Extended with 8 additional dimensions:
-- Agent position (x, y) normalized
-- Target position (x, y) - dynamic based on mission state
-- Charger position (x, y)
-- Holding status (0 or 1)
-- Battery level (0-100)
+### Reward Shaping
+| Reward | Event |
+|--------|-------|
+| +500 * eff | Delivery (efficiency-scaled) |
+| +300 * eff | Mission complete bonus |
+| +150 | Pickup at correct shelf |
+| +20 | Arrival at target location |
+| +15 | Toggle at correct position |
+| +8 / -5 | Distance shaping (closer / farther) |
+| -1 growing | Step penalty (increases over time) |
+| -10 | Hesitation (at target, not toggling) |
+| -50 | Wrong drop |
+| -100 | Battery death |
 
-### Reward Function
-```
-+100  Delivery (drop at goal)
-+10   Pickup (grab requested shelf)
-+50   Mission complete bonus
-+5    Smart charging (when battery low)
-+2    Moving closer to target
--0.5  Step penalty
--2    Wasteful charging
--5    Dropped without delivering
--50   Battery death
-```
+## Algorithms
 
-## Training Tips
-
-1. **Start simple**: Use 1 delivery target first
-2. **Slow drain**: Start with low battery_drain (0.05)
-3. **More exploration**: Keep epsilon_min around 0.15
-4. **Patience**: RWARE is sparse-reward, may need 2000+ episodes
-
-## Visualization Legend
-
-- 🟡 **Yellow square** = Charger station
-- 🔴 **Red circle** = Agent carrying shelf
-- 🟠 **Orange circle** = Agent empty
-- 🌊 **Teal** = Requested shelf
-- 🟦 **Dark blue** = Regular shelf
-- ⬛ **Dark gray** = Goal zone
-- **Battery bar** = Green (>50%), Yellow (20-50%), Red (<20%)
+| | DQN | PPO | SAC |
+|-|-----|-----|-----|
+| Type | Value-based | Policy gradient | Max-entropy |
+| Buffer | Replay buffer | Rollout buffer | Replay buffer |
+| Exploration | ε-greedy | Stochastic policy | Entropy bonus |
+| Networks | Q-network + target | Actor-Critic (shared) | Actor + Twin Critics |
 
 ## License
 
