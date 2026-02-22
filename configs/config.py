@@ -15,6 +15,16 @@ ENV_CONFIG = {
     "n_agents": 1,
 }
 
+# Proposal: start with small grid (5×5) then scale (see Section 4).
+ENV_CONFIG_5x5 = {
+    "max_steps": 200,
+    "max_deliveries": 1,
+    "shelf_columns": 5,
+    "column_height": 1,
+    "shelf_rows": 5,
+    "n_agents": 1,
+}
+
 # --- Battery ---
 # max_battery=100 + drain=0.3 → dies at step 333 without charging
 # 1 efficient delivery (~40 steps) drains 12 → battery=88

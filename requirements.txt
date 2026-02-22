@@ -1,0 +1,8 @@
+gymnasium
+numpy
+torch
+pyglet
+rware
+matplotlib
+scipy
+pybullet
