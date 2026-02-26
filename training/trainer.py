@@ -47,7 +47,7 @@ def _scalar_reward(reward):
 
 
 def train(algo, env_config, battery_config, algo_config, training_config,
-          verbose=True):
+          verbose=True, seed=None, device=None):
     """
     Train an agent.
 
@@ -58,15 +58,25 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         algo_config: algorithm hyperparameters dict
         training_config: episodes, eval_freq, save_freq
         verbose: print progress
+        seed: optional int for reproducibility (torch, numpy, env)
+        device: torch device (cuda/cpu); if None, uses cpu
 
     Returns:
         MetricsCollector with all episode data
     """
-    device = torch.device("cpu")
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        if device is not None and device.type == "cuda":
+            torch.cuda.manual_seed(seed)
+
+    if device is None:
+        device = torch.device("cpu")
     env = make_env(env_config, battery_config)
 
-    # Determine obs/action sizes from env
-    obs, _ = env.reset()
+    # Determine obs/action sizes from env (use seed for first reset if reproducibility)
+    reset_kw = {"seed": seed} if seed is not None else {}
+    obs, _ = env.reset(**reset_kw)
     state = _obs_to_array(obs)
     obs_size = state.shape[0]
     n_actions = env.action_space.spaces[0].n if hasattr(env.action_space, "spaces") else env.action_space.n
@@ -83,15 +93,18 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     Path("models").mkdir(exist_ok=True)
     Path("outputs").mkdir(exist_ok=True)
     best_reward = float("-inf")
+    model_suffix = f"_seed{seed}" if seed is not None else ""
 
     if verbose:
         print(f"\n{'='*60}")
         print(f"Training {algo.upper()} | {episodes} episodes")
-        print(f"Obs: {obs_size} | Actions: {n_actions}")
+        print(f"Obs: {obs_size} | Actions: {n_actions}" + (f" | Seed: {seed}" if seed is not None else "") + f" | Device: {device}")
         print(f"{'='*60}\n")
 
     for ep in range(1, episodes + 1):
-        obs, info = env.reset()
+        # Per-episode seed for reproducibility (Gymnasium)
+        reset_kw = {"seed": seed + ep} if seed is not None else {}
+        obs, info = env.reset(**reset_kw)
         state = _obs_to_array(obs)
         ep_reward = 0.0
         done = False
@@ -117,8 +130,9 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
         agent.end_episode()
 
-        # PPO: flush remaining rollout at episode end
-        if algo == "ppo" and len(agent.buf_states) > 0:
+        # PPO: flush remaining rollout only if substantial (avoid noisy micro-updates)
+        min_flush = min(getattr(agent, "rollout_len", 128), 512)
+        if algo == "ppo" and len(agent.buf_states) >= min_flush:
             agent.update(next_state=state)
 
         metrics.log_episode(ep, ep_reward, env.total_steps, info,
