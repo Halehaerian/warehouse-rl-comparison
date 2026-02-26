@@ -26,6 +26,33 @@ ENV_CONFIG_5x5 = {
     "n_agents": 1,
 }
 
+# Larger warehouses (more shelf columns/rows = bigger map).
+ENV_CONFIG_7x7 = {
+    "max_steps": 400,
+    "max_deliveries": 1,
+    "shelf_columns": 7,
+    "column_height": 1,
+    "shelf_rows": 7,
+    "n_agents": 1,
+}
+
+ENV_CONFIG_10x10 = {
+    "max_steps": 600,
+    "max_deliveries": 1,
+    "shelf_columns": 10,
+    "column_height": 1,
+    "shelf_rows": 10,
+    "n_agents": 1,
+}
+
+# Named env presets (used by train.py --env)
+ENV_PRESETS = {
+    "default": ENV_CONFIG,
+    "5x5": ENV_CONFIG_5x5,
+    "7x7": ENV_CONFIG_7x7,
+    "10x10": ENV_CONFIG_10x10,
+}
+
 # --- Battery ---
 # drain=2.5 -> dies at step 40 without charging
 # Threshold=50 triggers CHARGING at step 20 -- EVERY episode must charge
@@ -57,18 +84,25 @@ DQN_CONFIG = {
     "warmup": 500,
 }
 
-# --- PPO ---
+# --- PPO (tuned for warehouse: larger net, more exploration, LR decay) ---
 PPO_CONFIG = {
     "lr": 3e-4,
+    "lr_min": 1e-4,
+    "lr_decay": 0.9998,
     "gamma": 0.99,
-    "gae_lambda": 0.95,
+    "gae_lambda": 0.98,
     "clip_eps": 0.2,
-    "ppo_epochs": 4,
-    "batch_size": 64,
-    "rollout_len": 128,
-    "hidden_size": 128,
-    "vf_coef": 0.5,
-    "ent_coef": 0.01,
+    "value_clip": 0.2,
+    "ppo_epochs": 10,
+    "batch_size": 128,
+    "rollout_len": 2048,
+    "hidden_size": 512,
+    "n_layers": 3,
+    "use_layer_norm": True,
+    "vf_coef": 0.25,
+    "ent_coef": 0.025,
+    "reward_scale": 0.01,
+    "max_grad_norm": 0.5,
 }
 
 # --- SAC ---
