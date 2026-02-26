@@ -1,6 +1,13 @@
-"""
-Compute proposal metrics from training outputs: success rate %, battery death %,
-episodes to 80% success, and Table 1 summary.
+"""Compute proposal metrics from training outputs.
+
+Metrics:
+  - Success rate %          (mission_complete episodes)
+  - Battery death %         (battery_dead episodes)
+  - Avg deliveries / episode
+  - Avg steps per delivery  (efficiency of routing)
+  - Battery efficiency %    (avg battery remaining at end, higher = more efficient)
+  - Episodes to 80% success
+  - Table 1 summary
 
 Usage:
     python scripts/evaluate.py
@@ -64,6 +71,42 @@ def mean_steps(episodes: list) -> float:
     return sum(e.get("steps", 0) for e in episodes) / len(episodes)
 
 
+def avg_deliveries(episodes: list) -> float:
+    """Average number of deliveries per episode."""
+    if not episodes:
+        return 0.0
+    return sum(e.get("deliveries", 0) for e in episodes) / len(episodes)
+
+
+def avg_steps_per_delivery(episodes: list) -> float:
+    """Average steps per completed delivery across all episodes."""
+    total_steps = 0
+    total_deliveries = 0
+    for e in episodes:
+        segs = e.get("delivery_segment_steps", [])
+        if segs:
+            total_steps += sum(segs)
+            total_deliveries += len(segs)
+    if total_deliveries == 0:
+        return 0.0
+    return total_steps / total_deliveries
+
+
+def battery_efficiency(episodes: list) -> float:
+    """Average battery remaining (%) at end of completed episodes."""
+    completed = [e for e in episodes if e.get("mission_complete", False)]
+    if not completed:
+        return 0.0
+    return sum(e.get("battery_remaining", 0) for e in completed) / len(completed)
+
+
+def avg_charging_events(episodes: list) -> float:
+    """Average number of charging events per episode."""
+    if not episodes:
+        return 0.0
+    return sum(e.get("charging_events", 0) for e in episodes) / len(episodes)
+
+
 def evaluate_one(path: Path, window: int = 200) -> dict:
     """Compute all metrics for one algorithm's metrics file."""
     episodes = load_metrics(path)
@@ -74,6 +117,10 @@ def evaluate_one(path: Path, window: int = 200) -> dict:
         "algorithm": path.stem.replace("_metrics", ""),
         "success_rate_pct": round(success_rate(episodes), 1),
         "battery_death_pct": round(battery_death_rate(episodes), 1),
+        "avg_deliveries": round(avg_deliveries(episodes), 2),
+        "avg_steps_per_delivery": round(avg_steps_per_delivery(episodes), 1),
+        "battery_efficiency_pct": round(battery_efficiency(episodes), 1),
+        "avg_charging": round(avg_charging_events(episodes), 2),
         "episodes_to_80pct": ep80 if ep80 is not None else "N/A",
         "mean_reward": round(mean_reward(episodes), 2),
         "mean_steps": round(mean_steps(episodes), 1),
@@ -111,37 +158,46 @@ def main():
         print(f"\n{r['algorithm'].upper()}")
         print(f"  Success rate:        {r['success_rate_pct']}%")
         print(f"  Battery death rate:  {r['battery_death_pct']}%")
+        print(f"  Avg deliveries/ep:   {r['avg_deliveries']}")
+        print(f"  Avg steps/delivery:  {r['avg_steps_per_delivery']}")
+        print(f"  Battery efficiency:  {r['battery_efficiency_pct']}%")
+        print(f"  Avg charging events: {r['avg_charging']}")
         print(f"  Episodes to 80%:     {r['episodes_to_80pct']}")
         print(f"  Mean reward:         {r['mean_reward']}")
         print(f"  Mean steps:          {r['mean_steps']}")
         print(f"  Total episodes:      {r['total_episodes']}")
 
     # Table 1 style summary
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 80)
     print("Table 1 (proposal-style summary)")
-    print("=" * 60)
-    headers = ["Algorithm", "Success Rate", "Battery Deaths", "Episodes to 80%"]
-    row_fmt = "{:12} {:>14} {:>16} {:>18}"
+    print("=" * 80)
+    headers = ["Algorithm", "Success Rate", "Battery Deaths", "Avg Del/Ep",
+               "Steps/Del", "Battery Eff", "Charges", "Ep to 80%"]
+    row_fmt = "{:12} {:>14} {:>16} {:>12} {:>10} {:>12} {:>9} {:>10}"
     print(row_fmt.format(*headers))
-    print("-" * 60)
+    print("-" * 90)
     for r in results:
         if "error" in r:
             continue
         sr = f"{r['success_rate_pct']}%"
         bd = f"{r['battery_death_pct']}%"
+        ad = f"{r['avg_deliveries']}"
+        sd = f"{r['avg_steps_per_delivery']}"
+        be = f"{r['battery_efficiency_pct']}%"
+        ch = f"{r['avg_charging']}"
         e80 = str(r["episodes_to_80pct"])
-        print(row_fmt.format(r["algorithm"].upper(), sr, bd, e80))
+        print(row_fmt.format(r["algorithm"].upper(), sr, bd, ad, sd, be, ch, e80))
 
     if args.out_table:
         out_path = Path(args.out_table)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w") as f:
-            f.write("algorithm,success_rate_pct,battery_death_pct,episodes_to_80pct,mean_reward,mean_steps,total_episodes\n")
+            f.write("algorithm,success_rate_pct,battery_death_pct,avg_deliveries,avg_steps_per_delivery,battery_efficiency_pct,avg_charging,episodes_to_80pct,mean_reward,mean_steps,total_episodes\n")
             for r in results:
                 if "error" in r:
                     continue
                 e80 = r["episodes_to_80pct"] if isinstance(r["episodes_to_80pct"], int) else ""
-                f.write(f"{r['algorithm']},{r['success_rate_pct']},{r['battery_death_pct']},{e80},{r['mean_reward']},{r['mean_steps']},{r['total_episodes']}\n")
+                f.write(f"{r['algorithm']},{r['success_rate_pct']},{r['battery_death_pct']},{r['avg_deliveries']},{r['avg_steps_per_delivery']},{r['battery_efficiency_pct']},{r['avg_charging']},{e80},{r['mean_reward']},{r['mean_steps']},{r['total_episodes']}\n")
         print(f"\nTable saved to {out_path}")
 
 
