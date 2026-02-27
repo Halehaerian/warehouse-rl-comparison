@@ -55,7 +55,7 @@ ENV_PRESETS = {
 
 # --- Battery ---
 # drain=2.5 -> dies at step 40 without charging
-# Threshold=50 triggers CHARGING at step 20 -- EVERY episode must charge
+# Threshold=50 means battery hits 50 at step 20; with (battery < threshold) CHARGING starts on step 21
 # Even a fast 5-delivery run (~22 steps/delivery) must detour to charger
 # charge_rate=25 per step -> recharge 50->85 in 2 steps at charger
 # resume=85 gives ~14 more steps before next charge trigger
