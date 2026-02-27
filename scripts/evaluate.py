@@ -1,14 +1,16 @@
 """Compute proposal metrics from training outputs.
 
-Metrics:
+Metrics reported by this script:
   - Success rate %          (mission_complete episodes)
   - Battery death %         (battery_dead episodes)
-  - Avg deliveries / episode
-  - Avg steps per delivery  (efficiency of routing)
-  - Battery efficiency %    (avg battery remaining at end, higher = more efficient)
-  - Episodes to 80% success
-  - Table 1 summary
+  - Episodes to 80% success (rolling window)
+  - Table 1 summary         (aggregated metrics written to CSV)
 
+Note:
+  Additional helper functions in this module compute other metrics
+  (e.g., deliveries per episode, routing efficiency, battery usage,
+  charging events) that may be used by downstream analysis code, but
+  they are not currently printed or exported by this CLI.
 Usage:
     python scripts/evaluate.py
     python scripts/evaluate.py --outputs outputs --window 200
