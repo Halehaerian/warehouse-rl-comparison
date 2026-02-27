@@ -6,19 +6,20 @@ Battery config is kept separate for future expansion.
 """
 
 # --- Environment ---
+# 5 deliveries, optimal ~77 steps. max_steps=300 gives margin for charging.
 ENV_CONFIG = {
-    "max_steps": 200,
-    "max_deliveries": 1,
+    "max_steps": 300,
+    "max_deliveries": 5,
     "shelf_columns": 3,
     "column_height": 1,
     "shelf_rows": 1,
     "n_agents": 1,
 }
 
-# Proposal: start with small grid (5×5) then scale (see Section 4).
+# Proposal: start with small grid (5x5) then scale (see Section 4).
 ENV_CONFIG_5x5 = {
-    "max_steps": 200,
-    "max_deliveries": 1,
+    "max_steps": 300,
+    "max_deliveries": 5,
     "shelf_columns": 5,
     "column_height": 1,
     "shelf_rows": 5,
@@ -53,14 +54,19 @@ ENV_PRESETS = {
 }
 
 # --- Battery ---
-# max_battery=100 + drain=0.3 → dies at step 333 without charging
-# 1 efficient delivery (~40 steps) drains 12 → battery=88
-# Agent has time to learn before battery becomes critical
+# drain=2.5 -> dies at step 40 without charging
+# Threshold=50 means battery hits 50 at step 20; with (battery < threshold) CHARGING starts on step 21
+# Even a fast 5-delivery run (~22 steps/delivery) must detour to charger
+# charge_rate=25 per step -> recharge 50->85 in 2 steps at charger
+# resume=85 gives ~14 more steps before next charge trigger
+# => Charging is a first-class quest waypoint, not an optional detour
+# Charger at (0,0)
 BATTERY_CONFIG = {
     "max_battery": 100.0,
-    "battery_drain": 0.3,
+    "battery_drain": 2.5,
     "charge_rate": 25.0,
-    "battery_threshold": 25.0,
+    "battery_threshold": 50.0,
+    "battery_resume": 85.0,
     "charger_location": (0, 0),
 }
 
@@ -69,10 +75,10 @@ DQN_CONFIG = {
     "lr": 1e-3,
     "gamma": 0.99,
     "epsilon_start": 1.0,
-    "epsilon_min": 0.01,
-    "epsilon_decay": 0.999,      # reach ~0.05 by ep 3000
+    "epsilon_min": 0.05,          # higher floor for more exploration (helps discover charging)
+    "epsilon_decay": 0.9997,      # slower decay: reaches ~0.05 around ep 11000
     "batch_size": 128,
-    "memory_size": 100000,
+    "memory_size": 200000,         # larger buffer for 5-delivery episodes (longer episodes)
     "hidden_size": 256,
     "target_update_freq": 100,
     "warmup": 500,

@@ -22,8 +22,15 @@ class MetricsCollector:
         }
         if info:
             entry["deliveries"] = info.get("deliveries", 0)
+            entry["max_deliveries"] = info.get("max_deliveries", 1)
             entry["mission_complete"] = info.get("mission_complete", False)
             entry["battery_dead"] = info.get("battery_dead", False)
+            entry["battery_remaining"] = round(info.get("battery_remaining", 0), 1)
+            entry["charging_events"] = info.get("charging_events", 0)
+            seg = info.get("delivery_segment_steps", [])
+            entry["delivery_segment_steps"] = seg
+            if seg:
+                entry["avg_steps_per_delivery"] = round(sum(seg) / len(seg), 1)
         entry.update(extra)
         self.episodes.append(entry)
 
