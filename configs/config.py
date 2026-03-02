@@ -54,16 +54,14 @@ ENV_PRESETS = {
 }
 
 # --- Battery ---
-# drain=2.5 -> dies at step 40 without charging
-# Threshold=50 means battery hits 50 at step 20; with (battery < threshold) CHARGING starts on step 21
-# Even a fast 5-delivery run (~22 steps/delivery) must detour to charger
-# charge_rate=25 per step -> recharge 50->85 in 2 steps at charger
-# resume=85 gives ~14 more steps before next charge trigger
-# => Charging is a first-class quest waypoint, not an optional detour
-# Charger at (0,0)
+# Gentler drain so the agent can complete deliveries and learn to charge (post-merge fix).
+# drain=1.0 -> 100 steps to empty; CHARGING at step 50 (threshold 50) gives time to reach (0,0).
+# For "hard" battery ablation use battery_drain=2.5 (dies at step 40 without charging).
+# charge_rate=25 per step -> recharge 50->85 in ~2 steps at charger; resume=85.
+# Charger at (0,0).
 BATTERY_CONFIG = {
     "max_battery": 100.0,
-    "battery_drain": 2.5,
+    "battery_drain": 1.0,
     "charge_rate": 25.0,
     "battery_threshold": 50.0,
     "battery_resume": 85.0,
@@ -71,17 +69,20 @@ BATTERY_CONFIG = {
 }
 
 # --- DQN ---
+# epsilon_decay 0.9985 -> ~0.22 at 1000 ep, ~0.05 by ~2000 ep (so DQN exploits in short runs).
+# reward_scale matches PPO for stable Q-learning with large env rewards.
 DQN_CONFIG = {
     "lr": 1e-3,
     "gamma": 0.99,
     "epsilon_start": 1.0,
-    "epsilon_min": 0.05,          # higher floor for more exploration (helps discover charging)
-    "epsilon_decay": 0.9997,      # slower decay: reaches ~0.05 around ep 11000
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.9985,
     "batch_size": 128,
-    "memory_size": 200000,         # larger buffer for 5-delivery episodes (longer episodes)
+    "memory_size": 200000,
     "hidden_size": 256,
     "target_update_freq": 100,
     "warmup": 500,
+    "reward_scale": 0.01,
 }
 
 # --- PPO (tuned for warehouse: larger net, more exploration, LR decay) ---

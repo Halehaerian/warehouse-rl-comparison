@@ -116,14 +116,14 @@ def train(algo, env_config, battery_config, algo_config, training_config,
             reward = _scalar_reward(reward)
             next_state = _obs_to_array(next_obs)
 
-            # Algorithm-specific update
+            # Algorithm-specific update (DQN/SAC use scaled reward for stability)
             if algo == "ppo":
                 agent.store_transition(state, action, reward, done)
                 if agent.ready_to_update():
                     agent.update(next_state=next_state)
             else:
-                # DQN and SAC: store + train in update()
-                agent.update(state, action, reward, next_state, done)
+                scale = algo_config.get("reward_scale", 1.0)
+                agent.update(state, action, reward * scale, next_state, done)
 
             ep_reward += reward
             state = next_state
