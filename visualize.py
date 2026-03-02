@@ -237,8 +237,15 @@ class BatteryRenderer:
         )
         label.draw()
         
-        status = "CARRYING SHELF →" if self.is_carrying else "Seeking shelf..."
-        status_color = (255, 100, 100, 255) if self.is_carrying else (150, 150, 150, 255)
+        if self.is_charging:
+            status = "CHARGING ⚡"
+            status_color = (255, 215, 0, 255)
+        elif self.is_carrying:
+            status = "CARRYING SHELF →"
+            status_color = (255, 100, 100, 255)
+        else:
+            status = "Seeking shelf..."
+            status_color = (150, 150, 150, 255)
         status_label = pyglet.text.Label(
             status, font_name='Arial', font_size=9,
             x=self.width // 2, y=bar_y + bar_height + 8,
@@ -247,7 +254,7 @@ class BatteryRenderer:
         )
         status_label.draw()
     
-    def render(self, battery_level, step_count, deliveries, pickups, is_carrying):
+    def render(self, battery_level, step_count, deliveries, pickups, is_carrying, is_charging=False):
         if self.closed:
             return False
         
@@ -256,6 +263,7 @@ class BatteryRenderer:
         self.deliveries = deliveries
         self.pickups = pickups
         self.is_carrying = is_carrying
+        self.is_charging = is_charging
         
         glClearColor(1, 1, 1, 1)
         glClear(GL_COLOR_BUFFER_BIT)
@@ -378,8 +386,9 @@ def visualize(args):
                 deliveries = new_del
 
             battery = info.get("battery_levels", [100])[0]
+            is_charging = (hasattr(env, "mission_state") and env.mission_state[0] == 2)
 
-            if not renderer.render(battery, steps, deliveries, pickups, carrying_after):
+            if not renderer.render(battery, steps, deliveries, pickups, carrying_after, is_charging):
                 renderer.close()
                 env.close()
                 return

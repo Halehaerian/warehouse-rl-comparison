@@ -1,7 +1,16 @@
-"""
-Compute proposal metrics from training outputs: success rate %, battery death %,
-episodes to 80% success, and Table 1 summary.
+"""Compute proposal metrics from training outputs.
 
+Metrics reported by this script:
+  - Success rate %          (mission_complete episodes)
+  - Battery death %         (battery_dead episodes)
+  - Episodes to 80% success (rolling window)
+  - Table 1 summary         (aggregated metrics written to CSV)
+
+Note:
+  Additional helper functions in this module compute other metrics
+  (e.g., deliveries per episode, routing efficiency, battery usage,
+  charging events) that may be used by downstream analysis code, but
+  they are not currently printed or exported by this CLI.
 Usage:
     python scripts/evaluate.py
     python scripts/evaluate.py --outputs outputs --window 200
@@ -71,7 +80,40 @@ def _algo_base_name(path: Path) -> str:
     if "_seed" in stem:
         stem = stem.split("_seed")[0]
     return stem
+def avg_deliveries(episodes: list) -> float:
+    """Average number of deliveries per episode."""
+    if not episodes:
+        return 0.0
+    return sum(e.get("deliveries", 0) for e in episodes) / len(episodes)
 
+
+def avg_steps_per_delivery(episodes: list) -> float:
+    """Average steps per completed delivery across all episodes."""
+    total_steps = 0
+    total_deliveries = 0
+    for e in episodes:
+        segs = e.get("delivery_segment_steps", [])
+        if segs:
+            total_steps += sum(segs)
+            total_deliveries += len(segs)
+    if total_deliveries == 0:
+        return 0.0
+    return total_steps / total_deliveries
+
+
+def battery_efficiency(episodes: list) -> float:
+    """Average battery remaining (%) at end of completed episodes."""
+    completed = [e for e in episodes if e.get("mission_complete", False)]
+    if not completed:
+        return 0.0
+    return sum(e.get("battery_remaining", 0) for e in completed) / len(completed)
+
+
+def avg_charging_events(episodes: list) -> float:
+    """Average number of charging events per episode."""
+    if not episodes:
+        return 0.0
+    return sum(e.get("charging_events", 0) for e in episodes) / len(episodes)
 
 def evaluate_one(path: Path, window: int = 200) -> dict:
     """Compute all metrics for one algorithm's metrics file."""
@@ -84,6 +126,10 @@ def evaluate_one(path: Path, window: int = 200) -> dict:
         "algorithm": base,
         "success_rate_pct": round(success_rate(episodes), 1),
         "battery_death_pct": round(battery_death_rate(episodes), 1),
+        "avg_deliveries": round(avg_deliveries(episodes), 2),
+        "avg_steps_per_delivery": round(avg_steps_per_delivery(episodes), 1),
+        "battery_efficiency_pct": round(battery_efficiency(episodes), 1),
+        "avg_charging": round(avg_charging_events(episodes), 2),
         "episodes_to_80pct": ep80 if ep80 is not None else "N/A",
         "mean_reward": round(mean_reward(episodes), 2),
         "mean_steps": round(mean_steps(episodes), 1),
