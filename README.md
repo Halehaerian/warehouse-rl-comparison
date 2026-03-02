@@ -86,5 +86,15 @@ Training uses **`--device auto`** by default: it uses CUDA if available, otherwi
 - **Table 1 & metrics:** `python scripts/evaluate.py` (reads `outputs/*_metrics.json`). Optionally `--out-table results/table1.csv`.
 - **Learning curves:** `python scripts/plot_learning_curves.py` (saves reward, success rate, battery death figures to `outputs/`).
 
+## Visualize / evaluate on a specific environment (5x5, 7x7, 10x10)
+- **Visualize** (run the agent in a chosen map):
+  - `python visualize.py --algo ppo --env 5x5`
+  - `python visualize.py --algo dqn --env 7x7 --episodes 5`
+  - `--env` can be: `default`, `5x5`, `7x7`, `10x10` (same presets as training).
+- **Evaluate** (report metrics from training): the script reads whatever is in `outputs/*_metrics.json`. Those files are written by the **last** training run. To get metrics for 5x5, train with that env then run evaluate:
+  - `python train.py --algo ppo --env 5x5 --episodes 1000`
+  - `python scripts/evaluate.py`
+  - The reported metrics are then for the 5x5 environment. Use a separate `--outputs` folder or rename/save metrics files if you want to keep results for multiple envs side by side.
+
 ## Config
 - `configs/config.py`: env presets (`ENV_PRESETS`), algorithm configs, `ENV_CONFIG_5x5`, `ENV_CONFIG_7x7`, `ENV_CONFIG_10x10`.

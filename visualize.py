@@ -7,6 +7,8 @@ charger station, and real-time stats.
 Usage:
     python visualize.py --algo dqn
     python visualize.py --algo ppo --model models/ppo_best.pt
+    python visualize.py --algo ppo --env 5x5
+    python visualize.py --algo dqn --env 7x7 --episodes 5
 """
 
 import argparse
@@ -22,7 +24,7 @@ from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
 from agents.sac import SACAgent
-from configs.config import ENV_CONFIG, BATTERY_CONFIG, ALGO_CONFIGS
+from configs.config import ENV_PRESETS, BATTERY_CONFIG, ALGO_CONFIGS
 
 # Import pyglet for graphical rendering
 try:
@@ -308,6 +310,9 @@ def parse_args():
                         help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
+    parser.add_argument("--env", type=str, default="default",
+                        choices=list(ENV_PRESETS.keys()),
+                        help="Environment preset: default, 5x5, 7x7, 10x10 (default: default)")
     parser.add_argument("--episodes", type=int, default=3,
                         help="Number of episodes to run")
     parser.add_argument("--delay", type=float, default=0.08,
@@ -330,12 +335,13 @@ def visualize(args):
         print(f"No trained model found for {algo}. Run train.py --algo {algo} first!")
         return
 
+    env_config = ENV_PRESETS[args.env]
     print(f"{'='*60}")
-    print(f"Visualizing {algo.upper()} | Model: {model_path}")
+    print(f"Visualizing {algo.upper()} | Model: {model_path} | Env: {args.env}")
     print(f"{'='*60}")
 
     # Create environment
-    env = make_env(ENV_CONFIG, BATTERY_CONFIG)
+    env = make_env(env_config, BATTERY_CONFIG)
     charger = tuple(BATTERY_CONFIG.get("charger_location", (0, 0)))
     renderer = BatteryRenderer(env, charger_location=charger)
 
