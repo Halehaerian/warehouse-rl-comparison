@@ -6,8 +6,18 @@ Battery config is kept separate for future expansion.
 """
 
 # --- Environment ---
-# 5 deliveries, optimal ~77 steps. max_steps=300 gives margin for charging.
+# 7x7 shelf grid. 5 deliveries, max_steps=800 gives margin for navigation + charging.
 ENV_CONFIG = {
+    "max_steps": 800,
+    "max_deliveries": 5,
+    "shelf_columns": 7,
+    "column_height": 1,
+    "shelf_rows": 7,
+    "n_agents": 1,
+}
+
+# Small env kept for reference / quick tests
+ENV_CONFIG_SMALL = {
     "max_steps": 300,
     "max_deliveries": 5,
     "shelf_columns": 3,
@@ -18,7 +28,7 @@ ENV_CONFIG = {
 
 # Proposal: start with small grid (5x5) then scale (see Section 4).
 ENV_CONFIG_5x5 = {
-    "max_steps": 300,
+    "max_steps": 500,
     "max_deliveries": 5,
     "shelf_columns": 5,
     "column_height": 1,
@@ -28,8 +38,8 @@ ENV_CONFIG_5x5 = {
 
 # Larger warehouses (more shelf columns/rows = bigger map).
 ENV_CONFIG_7x7 = {
-    "max_steps": 400,
-    "max_deliveries": 1,
+    "max_steps": 800,
+    "max_deliveries": 5,
     "shelf_columns": 7,
     "column_height": 1,
     "shelf_rows": 7,
@@ -48,6 +58,7 @@ ENV_CONFIG_10x10 = {
 # Named env presets (used by train.py --env)
 ENV_PRESETS = {
     "default": ENV_CONFIG,
+    "small": ENV_CONFIG_SMALL,
     "5x5": ENV_CONFIG_5x5,
     "7x7": ENV_CONFIG_7x7,
     "10x10": ENV_CONFIG_10x10,
@@ -72,16 +83,16 @@ BATTERY_CONFIG = {
 
 # --- DQN ---
 DQN_CONFIG = {
-    "lr": 1e-3,
+    "lr": 5e-4,
     "gamma": 0.99,
     "epsilon_start": 1.0,
-    "epsilon_min": 0.05,          # higher floor for more exploration (helps discover charging)
-    "epsilon_decay": 0.9997,      # slower decay: reaches ~0.05 around ep 11000
-    "batch_size": 128,
-    "memory_size": 200000,         # larger buffer for 5-delivery episodes (longer episodes)
-    "hidden_size": 256,
-    "target_update_freq": 100,
-    "warmup": 500,
+    "epsilon_min": 0.05,
+    "epsilon_decay": 0.9994,      # reaches 0.05 at ep ~5000; 15k exploitation episodes remain
+    "batch_size": 256,
+    "memory_size": 300000,
+    "hidden_size": 512,
+    "target_update_freq": 200,
+    "warmup": 1000,
 }
 
 # --- PPO (tuned for warehouse: larger net, more exploration, LR decay) ---
@@ -95,12 +106,12 @@ PPO_CONFIG = {
     "value_clip": 0.2,
     "ppo_epochs": 10,
     "batch_size": 128,
-    "rollout_len": 2048,
+    "rollout_len": 4096,          # bigger rollouts for longer 7x7 episodes
     "hidden_size": 512,
     "n_layers": 3,
     "use_layer_norm": True,
     "vf_coef": 0.25,
-    "ent_coef": 0.025,
+    "ent_coef": 0.03,             # more entropy for larger exploration space
     "reward_scale": 0.01,
     "max_grad_norm": 0.5,
 }
@@ -110,15 +121,15 @@ SAC_CONFIG = {
     "lr": 3e-4,
     "gamma": 0.99,
     "tau": 0.005,
-    "batch_size": 64,
-    "memory_size": 50000,
-    "hidden_size": 128,
-    "warmup": 256,
+    "batch_size": 128,
+    "memory_size": 200000,        # 4x increase — critical for SAC to learn on longer episodes
+    "hidden_size": 256,           # larger network for bigger obs space
+    "warmup": 1000,               # more warmup for bigger env
 }
 
 # --- Training ---
 TRAINING_CONFIG = {
-    "episodes": 15000,
+    "episodes": 20000,
     "eval_freq": 200,
     "save_freq": 1000,
 }

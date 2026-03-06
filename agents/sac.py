@@ -19,6 +19,8 @@ class DiscreteActor(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden, hidden),
             nn.ReLU(),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
             nn.Linear(hidden, n_actions),
         )
 
@@ -41,10 +43,12 @@ class TwinCritic(nn.Module):
         self.q1 = nn.Sequential(
             nn.Linear(obs_size, hidden), nn.ReLU(),
             nn.Linear(hidden, hidden), nn.ReLU(),
+            nn.Linear(hidden, hidden), nn.ReLU(),
             nn.Linear(hidden, n_actions),
         )
         self.q2 = nn.Sequential(
             nn.Linear(obs_size, hidden), nn.ReLU(),
+            nn.Linear(hidden, hidden), nn.ReLU(),
             nn.Linear(hidden, hidden), nn.ReLU(),
             nn.Linear(hidden, n_actions),
         )
@@ -74,7 +78,9 @@ class SACAgent(BaseAgent):
         self.critic_opt = optim.Adam(self.critic.parameters(), lr=config.get("lr", 3e-4))
 
         # Auto-tune entropy
-        self.target_entropy = -np.log(1.0 / n_actions) * 0.98
+        # 0.5 × log(|A|): allows policy to become decisive while retaining some exploration
+        # 0.98 × log(|A|) was too high — forced near-uniform policy, preventing convergence
+        self.target_entropy = -np.log(1.0 / n_actions) * 0.5
         self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
         self.alpha_opt = optim.Adam([self.log_alpha], lr=config.get("lr", 3e-4))
 
@@ -127,6 +133,7 @@ class SACAgent(BaseAgent):
 
         self.critic_opt.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=10.0)
         self.critic_opt.step()
 
         # --- Actor update ---
@@ -140,6 +147,7 @@ class SACAgent(BaseAgent):
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
         self.actor_opt.step()
 
         # --- Alpha (entropy) update ---

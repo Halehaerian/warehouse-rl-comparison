@@ -29,7 +29,7 @@ def main():
                         help="Override number of episodes")
     parser.add_argument("--env", type=str, default="default",
                         choices=list(ENV_PRESETS.keys()),
-                        help="Warehouse map preset: default, 5x5, 7x7, 10x10")
+                        help="Warehouse map preset: default(7x7), small(3x1), 5x5, 7x7, 10x10")
     parser.add_argument("--shelf-columns", type=int, default=None,
                         help="Override shelf columns (map width)")
     parser.add_argument("--shelf-rows", type=int, default=None,
