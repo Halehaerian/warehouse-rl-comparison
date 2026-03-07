@@ -10,7 +10,7 @@ from pathlib import Path
 from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
-from agents.sac import SACAgent
+from agents.sac.sac import SACAgent
 from utils.metrics import MetricsCollector
 
 warnings.filterwarnings("ignore")
@@ -83,7 +83,10 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
     # Create agent
     AgentClass = AGENT_CLASSES[algo]
-    agent = AgentClass(obs_size, n_actions, device, algo_config)
+    if algo == 'sac':
+        agent = AgentClass(n_actions=n_actions, config=algo_config, input_dims = state.shape)
+    else:
+        agent = AgentClass(obs_size, n_actions, device, algo_config)
 
     episodes = training_config["episodes"]
     eval_freq = training_config.get("eval_freq", 200)
@@ -111,6 +114,9 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
         while not done:
             action = agent.select_action(state, training=True)
+            if algo == "sac":
+               action_set = action.detach()
+               action = np.argmax(action_set.numpy())
             next_obs, reward, terminated, truncated, info = env.step(_wrap_action(env, action))
             done = terminated or truncated
             reward = _scalar_reward(reward)
@@ -121,8 +127,12 @@ def train(algo, env_config, battery_config, algo_config, training_config,
                 agent.store_transition(state, action, reward, done)
                 if agent.ready_to_update():
                     agent.update(next_state=next_state)
+            elif algo == "sac":
+            # SAC
+                agent.remember(state, action_set, reward, next_state, done) 
+                agent.update()
             else:
-                # DQN and SAC: store + train in update()
+            #DQN: store + train in update()
                 agent.update(state, action, reward, next_state, done)
 
             ep_reward += reward

@@ -108,10 +108,15 @@ PPO_CONFIG = {
 # --- SAC ---
 SAC_CONFIG = {
     "lr": 3e-4,
+    "alpha": 3e-4,
+    "reward_scale": 2,
+    "n_actions" : 1,
+    "layer1_size": 256,
+    "layer2_size": 256,
     "gamma": 0.99,
     "tau": 0.005,
-    "batch_size": 64,
-    "memory_size": 50000,
+    "batch_size": 256,
+    "memory_size": 1000000,
     "hidden_size": 128,
     "warmup": 256,
 }

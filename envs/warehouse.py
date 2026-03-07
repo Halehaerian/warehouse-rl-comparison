@@ -270,15 +270,17 @@ class WarehouseWrapper(Wrapper):
 
         # --- Action masking: prevent picking up non-requested shelves ---
         requested = set(self._requested_shelves())
-        action = list(action) if hasattr(action, "__iter__") else [action]
-        for i in range(len(action)):
-            if action[i] == 4 and not was_carrying[i]:
+        action_list = list(action) if hasattr(action, "__iter__") else [action]
+
+        for i in range(len(action_list)):
+            if action_list[i] == 4 and not was_carrying[i]:
                 agent_pos = old_pos[i] if i < len(old_pos) else (0, 0)
                 if agent_pos not in requested:
-                    action[i] = 0  # convert to NOOP
-        action = tuple(action)
+                    action_list[i] = 0 # convert to NOOP
 
-        obs, reward, terminated, truncated, info = self.env.step(action)
+        final_action = tuple(action)
+
+        obs, reward, terminated, truncated, info = self.env.step(final_action)
         self.total_steps += 1
         self.segment_steps += 1
 
