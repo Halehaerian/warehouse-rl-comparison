@@ -46,6 +46,15 @@ def _scalar_reward(reward):
     return float(reward)
 
 
+def _save_checkpoint(agent, path, episode):
+    """Save agent checkpoint with episode number embedded."""
+    import os
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    data = agent.state_dict()
+    data["episode"] = episode
+    torch.save(data, path)
+
+
 def train(algo, env_config, battery_config, algo_config, training_config,
           verbose=True, seed=None, device=None, resume_path=None):
     """
@@ -101,12 +110,14 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     if resume_path is not None:
         p = Path(resume_path)
         if p.exists():
-            agent.load(str(p))
-            # Try to extract episode number from filename like ppo_ep10000.pt
-            stem = p.stem  # e.g. "ppo_ep10000"
-            if "_ep" in stem:
+            checkpoint = torch.load(str(p), map_location=device)
+            agent.load_state_dict(checkpoint)
+            # Try to get episode number from checkpoint data first
+            if "episode" in checkpoint:
+                start_ep = checkpoint["episode"] + 1
+            elif "_ep" in p.stem:
                 try:
-                    start_ep = int(stem.split("_ep")[-1]) + 1
+                    start_ep = int(p.stem.split("_ep")[-1]) + 1
                 except ValueError:
                     start_ep = 1
             if verbose:
@@ -165,14 +176,14 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
             if avg > best_reward:
                 best_reward = avg
-                agent.save(f"models/{algo}_best.pt")
+                _save_checkpoint(agent, f"models/{algo}_best.pt", ep)
                 print(f"  -> New best! Saved models/{algo}_best.pt")
 
         if ep % save_freq == 0:
-            agent.save(f"models/{algo}_ep{ep}.pt")
+            _save_checkpoint(agent, f"models/{algo}_ep{ep}.pt", ep)
 
     # Final save
-    agent.save(f"models/{algo}_final.pt")
+    _save_checkpoint(agent, f"models/{algo}_final.pt", episodes)
     metrics.save(f"outputs/{algo}_metrics.json")
 
     if verbose:
