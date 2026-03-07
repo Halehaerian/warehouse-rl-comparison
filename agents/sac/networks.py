@@ -9,7 +9,7 @@ from torch .distributions.normal import Normal
 import numpy as np
 
 class CriticNetwork(nn.Module):
-    def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256, name='critic', chkpt_dir='../../models/sac'):
+    def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256, name='critic', chkpt_dir='models/sac'):
         # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output
 
         super(CriticNetwork, self).__init__()
@@ -41,7 +41,7 @@ class CriticNetwork(nn.Module):
 
 
 class ValueNetwork(nn.Module):
-    def __init__(self, beta, input_dims, fc1_dims=256, fc2_dims=256, name='value', chkpt_dir='../../models/sac'):
+    def __init__(self, beta, input_dims, fc1_dims=256, fc2_dims=256, name='value', chkpt_dir='models/sac'):
         # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output
 
         super(ValueNetwork, self).__init__()
@@ -72,7 +72,7 @@ class ValueNetwork(nn.Module):
 
 
 class ActorNetwork(nn.Module):
-    def __init__(self, alpha, input_dims, n_actions, fc1_dims=256, fc2_dims=256, name='actor', checkpt_dir='../../models/sac'):
+    def __init__(self, alpha, input_dims, n_actions, fc1_dims=256, fc2_dims=256, name='actor', checkpt_dir='models/sac'):
         # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output > Softmax
 
         super(ActorNetwork, self).__init__()
