@@ -136,7 +136,7 @@ SAC_CONFIG = {
 
 # --- Training ---
 TRAINING_CONFIG = {
-    "episodes": 20000,
+    "episodes": 10000,
     "eval_freq": 200,
     "save_freq": 1000,
 }
