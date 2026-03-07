@@ -266,16 +266,20 @@ class WarehouseWrapper(Wrapper):
 
     def step(self, action):
         was_carrying = [a.carrying_shelf is not None for a in self.env.unwrapped.agents]
+        was_carrying_shelf = [a.carrying_shelf for a in self.env.unwrapped.agents]
         old_pos = self._agent_positions()
 
-        # --- Action masking: prevent picking up non-requested shelves ---
+        # --- Action masking ---
         requested = set(self._requested_shelves())
+        goals = set(self._goal_positions())
         action = list(action) if hasattr(action, "__iter__") else [action]
         for i in range(len(action)):
-            if action[i] == 4 and not was_carrying[i]:
+            if action[i] == 4:
                 agent_pos = old_pos[i] if i < len(old_pos) else (0, 0)
-                if agent_pos not in requested:
-                    action[i] = 0  # convert to NOOP
+                if not was_carrying[i] and agent_pos not in requested:
+                    action[i] = 0  # prevent picking up non-requested shelf
+                elif was_carrying[i] and agent_pos not in goals:
+                    action[i] = 0  # prevent dropping shelf at non-goal
         action = tuple(action)
 
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -290,21 +294,24 @@ class WarehouseWrapper(Wrapper):
         # ---- Detect RWARE delivery (env_r > 0) ----
         env_r = sum(reward) if isinstance(reward, (list, tuple)) else reward
 
-        # After RWARE delivery: return delivered shelf to its home position
-        # so it doesn't block the goal for future deliveries, then clear carry.
+        # After RWAVE delivery: return delivered shelf to its home position
+        # so it doesn't block the goal for future deliveries.
+        # Use pre-step shelf reference since RWARE already cleared carrying_shelf.
         if env_r > 0:
             for i in range(self.n_agents):
-                agent_obj = self.env.unwrapped.agents[i]
-                if agent_obj.carrying_shelf is not None:
-                    shelf = agent_obj.carrying_shelf
-                    # Return shelf to its original position
+                shelf = was_carrying_shelf[i]
+                if shelf is not None:
                     home = self._shelf_home.get(shelf.id, None)
                     if home is not None:
                         shelf.x, shelf.y = home
-                    agent_obj.carrying_shelf = None
-            # Rebuild grid so the shelf is back at home, not at the goal
+                self.env.unwrapped.agents[i].carrying_shelf = None
             self.env.unwrapped._recalc_grid()
             now_carrying = [False] * self.n_agents
+
+        # ---- Reset potential when carrying state changes (target switches) ----
+        for i in range(self.n_agents):
+            if was_carrying[i] != now_carrying[i]:
+                self.prev_potential[i] = None
 
         # ---- Reward (main branch logic) ----
         r = -0.5  # constant step penalty
@@ -325,8 +332,8 @@ class WarehouseWrapper(Wrapper):
 
             self.prev_potential[i] = phi_now
 
-            # 2) Wall-bump / NOOP penalty
-            if p == old_pos[i] and act in (0, 1):
+            # 2) Wall-bump penalty (only FORWARD=1, not NOOP=0)
+            if p == old_pos[i] and act == 1:
                 r -= 1.0
 
             # 3) Toggle logic (wrong-shelf pickup already blocked by action masking)

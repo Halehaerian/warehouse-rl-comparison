@@ -72,9 +72,10 @@ class DQNAgent(BaseAgent):
 
         q_vals = self.q(s)[torch.arange(len(a)), a]
         with torch.no_grad():
-            # Standard DQN: target network selects AND evaluates best action
-            # L(θ) = E[(r + γ * max_a' Q_θ−(s', a') − Q_θ(s, a))²]
-            q_next = self.q_target(s2).max(1).values
+            # Double DQN: online network selects best action, target evaluates
+            # Reduces overestimation bias vs standard DQN
+            best_actions = self.q(s2).argmax(1)
+            q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
             target = r + self.gamma * q_next * (1 - d)
 
         loss = nn.MSELoss()(q_vals, target)  # squared error as per course formula

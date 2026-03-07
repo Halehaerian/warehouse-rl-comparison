@@ -29,7 +29,7 @@ def main():
                         help="Override number of episodes")
     parser.add_argument("--env", type=str, default="default",
                         choices=list(ENV_PRESETS.keys()),
-                        help="Warehouse map preset: default(7x7), small(3x1), 5x5, 7x7, 10x10")
+                        help="Warehouse map preset: default(10x10), small, 10x10, 16x16, 22x22")
     parser.add_argument("--shelf-columns", type=int, default=None,
                         help="Override shelf columns (map width)")
     parser.add_argument("--shelf-rows", type=int, default=None,
@@ -46,6 +46,8 @@ def main():
                         help="Multiple seeds for robust reporting, e.g. --seeds 42 123 456")
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cuda", "cpu"],
                         help="Device: auto (CUDA if available), cuda, or cpu")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint to resume from (e.g. models/ppo_ep10000.pt)")
     args = parser.parse_args()
 
     if args.seeds is not None and args.seed is not None:
@@ -81,7 +83,8 @@ def main():
         for seed in seed_list:
             if len(seed_list) > 1:
                 print(f"\n>>> Run {seed_list.index(seed) + 1}/{len(seed_list)} (seed={seed})")
-            train(algo, env_config, BATTERY_CONFIG, config, training_config, seed=seed, device=device)
+            train(algo, env_config, BATTERY_CONFIG, config, training_config,
+                  seed=seed, device=device, resume_path=args.resume)
 
 
 if __name__ == "__main__":

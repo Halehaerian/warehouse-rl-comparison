@@ -1,4 +1,4 @@
-"""
+﻿"""
 Visualize trained agent in RWARE environment.
 
 Shows the agent in a graphical window with battery level bar,
@@ -22,7 +22,7 @@ from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
 from agents.sac import SACAgent
-from configs.config import ENV_CONFIG, BATTERY_CONFIG, ALGO_CONFIGS
+from configs.config import ENV_CONFIG, ENV_PRESETS, BATTERY_CONFIG, ALGO_CONFIGS
 
 # Import pyglet for graphical rendering
 try:
@@ -308,6 +308,9 @@ def parse_args():
                         help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
+    parser.add_argument("--env", type=str, default="default",
+                        choices=list(ENV_PRESETS.keys()),
+                        help="Warehouse map preset (default: default)")
     parser.add_argument("--episodes", type=int, default=3,
                         help="Number of episodes to run")
     parser.add_argument("--delay", type=float, default=0.08,
@@ -330,13 +333,15 @@ def visualize(args):
         print(f"No trained model found for {algo}. Run train.py --algo {algo} first!")
         return
 
+    env_config = ENV_PRESETS[args.env]
+    battery_config = BATTERY_CONFIG
     print(f"{'='*60}")
     print(f"Visualizing {algo.upper()} | Model: {model_path}")
     print(f"{'='*60}")
 
     # Create environment
-    env = make_env(ENV_CONFIG, BATTERY_CONFIG)
-    charger = tuple(BATTERY_CONFIG.get("charger_location", (0, 0)))
+    env = make_env(env_config, battery_config)
+    charger = tuple(battery_config.get("charger_location", (0, 0)))
     renderer = BatteryRenderer(env, charger_location=charger)
 
     # Create and load agent

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unified training loop for DQN, PPO, and SAC agents.
 """
 
@@ -47,7 +47,7 @@ def _scalar_reward(reward):
 
 
 def train(algo, env_config, battery_config, algo_config, training_config,
-          verbose=True, seed=None, device=None):
+          verbose=True, seed=None, device=None, resume_path=None):
     """
     Train an agent.
 
@@ -60,6 +60,7 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         verbose: print progress
         seed: optional int for reproducibility (torch, numpy, env)
         device: torch device (cuda/cpu); if None, uses cpu
+        resume_path: path to checkpoint to resume from (e.g. models/ppo_ep10000.pt)
 
     Returns:
         MetricsCollector with all episode data
@@ -95,13 +96,31 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     best_reward = float("-inf")
     model_suffix = f"_seed{seed}" if seed is not None else ""
 
+    # Resume from checkpoint if specified
+    start_ep = 1
+    if resume_path is not None:
+        p = Path(resume_path)
+        if p.exists():
+            agent.load(str(p))
+            # Try to extract episode number from filename like ppo_ep10000.pt
+            stem = p.stem  # e.g. "ppo_ep10000"
+            if "_ep" in stem:
+                try:
+                    start_ep = int(stem.split("_ep")[-1]) + 1
+                except ValueError:
+                    start_ep = 1
+            if verbose:
+                print(f"Resumed from {resume_path} (starting at episode {start_ep})")
+        else:
+            print(f"Warning: resume checkpoint {resume_path} not found, training from scratch")
+
     if verbose:
         print(f"\n{'='*60}")
-        print(f"Training {algo.upper()} | {episodes} episodes")
+        print(f"Training {algo.upper()} | episodes {start_ep}-{episodes}")
         print(f"Obs: {obs_size} | Actions: {n_actions}" + (f" | Seed: {seed}" if seed is not None else "") + f" | Device: {device}")
         print(f"{'='*60}\n")
 
-    for ep in range(1, episodes + 1):
+    for ep in range(start_ep, episodes + 1):
         # Per-episode seed for reproducibility (Gymnasium)
         reset_kw = {"seed": seed + ep} if seed is not None else {}
         obs, info = env.reset(**reset_kw)
