@@ -1,4 +1,5 @@
-"""DQN Agent with target network and replay buffer."""
+"""DQN Agent with target network and replay buffer.
+"""
 
 import torch
 import torch.nn as nn
@@ -11,7 +12,7 @@ from agents.base import BaseAgent
 
 
 class QNetwork(nn.Module):
-    def __init__(self, obs_size: int, n_actions: int, hidden: int = 128):
+    def __init__(self, obs_size: int, n_actions: int, hidden: int = 256):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(obs_size, hidden),
@@ -29,7 +30,7 @@ class DQNAgent(BaseAgent):
     def __init__(self, obs_size, n_actions, device, config):
         super().__init__(obs_size, n_actions, device, config)
 
-        hidden = config.get("hidden_size", 128)
+        hidden = config.get("hidden_size", 256)
         self.gamma = config.get("gamma", 0.99)
         self.epsilon = config.get("epsilon_start", 1.0)
         self.epsilon_min = config.get("epsilon_min", 0.01)
@@ -71,12 +72,13 @@ class DQNAgent(BaseAgent):
 
         q_vals = self.q(s)[torch.arange(len(a)), a]
         with torch.no_grad():
-            # Double DQN: online net selects, target net evaluates
+            # Double DQN: online network selects best action, target evaluates
+            # Reduces overestimation bias vs standard DQN
             best_actions = self.q(s2).argmax(1)
             q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
             target = r + self.gamma * q_next * (1 - d)
 
-        loss = nn.SmoothL1Loss()(q_vals, target)  # Huber loss for stability
+        loss = nn.MSELoss()(q_vals, target)  # squared error as per course formula
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.q.parameters(), max_norm=10.0)
@@ -96,10 +98,15 @@ class DQNAgent(BaseAgent):
         return {
             "q": self.q.state_dict(),
             "q_target": self.q_target.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "epsilon": self.epsilon,
+            "steps": self.steps,
         }
 
     def load_state_dict(self, data):
         self.q.load_state_dict(data["q"])
         self.q_target.load_state_dict(data["q_target"])
+        if "optimizer" in data:
+            self.optimizer.load_state_dict(data["optimizer"])
         self.epsilon = data.get("epsilon", self.epsilon_min)
+        self.steps = data.get("steps", 0)

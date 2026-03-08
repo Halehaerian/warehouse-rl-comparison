@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
-*.pt
-models/*.pt
 .claude/
+# Only keep best/final models, ignore intermediate checkpoints
+models/*_ep*.pt

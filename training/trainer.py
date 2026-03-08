@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unified training loop for DQN, PPO, and SAC agents.
 """
 
@@ -46,8 +46,17 @@ def _scalar_reward(reward):
     return float(reward)
 
 
+def _save_checkpoint(agent, path, episode):
+    """Save agent checkpoint with episode number embedded."""
+    import os
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    data = agent.state_dict()
+    data["episode"] = episode
+    torch.save(data, path)
+
+
 def train(algo, env_config, battery_config, algo_config, training_config,
-          verbose=True, seed=None, device=None):
+          verbose=True, seed=None, device=None, resume_path=None):
     """
     Train an agent.
 
@@ -60,6 +69,7 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         verbose: print progress
         seed: optional int for reproducibility (torch, numpy, env)
         device: torch device (cuda/cpu); if None, uses cpu
+        resume_path: path to checkpoint to resume from (e.g. models/ppo_ep10000.pt)
 
     Returns:
         MetricsCollector with all episode data
@@ -95,13 +105,33 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     best_reward = float("-inf")
     model_suffix = f"_seed{seed}" if seed is not None else ""
 
+    # Resume from checkpoint if specified
+    start_ep = 1
+    if resume_path is not None:
+        p = Path(resume_path)
+        if p.exists():
+            checkpoint = torch.load(str(p), map_location=device)
+            agent.load_state_dict(checkpoint)
+            # Try to get episode number from checkpoint data first
+            if "episode" in checkpoint:
+                start_ep = checkpoint["episode"] + 1
+            elif "_ep" in p.stem:
+                try:
+                    start_ep = int(p.stem.split("_ep")[-1]) + 1
+                except ValueError:
+                    start_ep = 1
+            if verbose:
+                print(f"Resumed from {resume_path} (starting at episode {start_ep})")
+        else:
+            print(f"Warning: resume checkpoint {resume_path} not found, training from scratch")
+
     if verbose:
         print(f"\n{'='*60}")
-        print(f"Training {algo.upper()} | {episodes} episodes")
+        print(f"Training {algo.upper()} | episodes {start_ep}-{episodes}")
         print(f"Obs: {obs_size} | Actions: {n_actions}" + (f" | Seed: {seed}" if seed is not None else "") + f" | Device: {device}")
         print(f"{'='*60}\n")
 
-    for ep in range(1, episodes + 1):
+    for ep in range(start_ep, episodes + 1):
         # Per-episode seed for reproducibility (Gymnasium)
         reset_kw = {"seed": seed + ep} if seed is not None else {}
         obs, info = env.reset(**reset_kw)
@@ -121,15 +151,13 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
             # Algorithm-specific update
             if algo == "ppo":
-                agent.store_transition(state, action, reward, done)
+                # Pass terminated (not done) so truncated episodes still bootstrap future value
+                agent.store_transition(state, action, reward, terminated)
                 if agent.ready_to_update():
                     agent.update(next_state=next_state)
             else:
-            #DQN and SAC: store + train in update()
-                if algo == "sac":
-                   action = action_set
-
-                agent.update(state, action, reward, next_state, done)
+                # DQN and SAC: pass terminated (not done) so truncated episodes still bootstrap
+                agent.update(state, action, reward, next_state, terminated)
 
             ep_reward += reward
             state = next_state
@@ -152,14 +180,14 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
             if avg > best_reward:
                 best_reward = avg
-                agent.save(f"models/{algo}_best.pt")
+                _save_checkpoint(agent, f"models/{algo}_best.pt", ep)
                 print(f"  -> New best! Saved models/{algo}_best.pt")
 
         if ep % save_freq == 0:
-            agent.save(f"models/{algo}_ep{ep}.pt")
+            _save_checkpoint(agent, f"models/{algo}_ep{ep}.pt", ep)
 
     # Final save
-    agent.save(f"models/{algo}_final.pt")
+    _save_checkpoint(agent, f"models/{algo}_final.pt", episodes)
     metrics.save(f"outputs/{algo}_metrics.json")
 
     if verbose:
