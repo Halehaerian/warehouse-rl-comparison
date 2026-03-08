@@ -412,7 +412,7 @@ class WarehouseWrapper(Wrapper):
 
         if battery_dead:
             terminated = True
-            r -= 50.0  # strong penalty -- battery management is critical
+            r -= 50.0  # battery death penalty
 
         if mission_done:
             terminated = True

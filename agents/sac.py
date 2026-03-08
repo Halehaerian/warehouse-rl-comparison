@@ -61,7 +61,7 @@ class SACAgent(BaseAgent):
     def __init__(self, obs_size, n_actions, device, config):
         super().__init__(obs_size, n_actions, device, config)
 
-        hidden = config.get("hidden_size", 128)
+        hidden = config.get("hidden_size", 256)
         self.gamma = config.get("gamma", 0.99)
         self.tau = config.get("tau", 0.005)
         self.batch_size = config.get("batch_size", 64)
@@ -173,6 +173,10 @@ class SACAgent(BaseAgent):
             "critic": self.critic.state_dict(),
             "target_critic": self.target_critic.state_dict(),
             "log_alpha": self.log_alpha.detach().cpu(),
+            "actor_opt": self.actor_opt.state_dict(),
+            "critic_opt": self.critic_opt.state_dict(),
+            "alpha_opt": self.alpha_opt.state_dict(),
+            "steps": self.steps,
         }
 
     def load_state_dict(self, data):
@@ -180,3 +184,10 @@ class SACAgent(BaseAgent):
         self.critic.load_state_dict(data["critic"])
         self.target_critic.load_state_dict(data["target_critic"])
         self.log_alpha.data.copy_(data["log_alpha"].to(self.device))
+        if "actor_opt" in data:
+            self.actor_opt.load_state_dict(data["actor_opt"])
+        if "critic_opt" in data:
+            self.critic_opt.load_state_dict(data["critic_opt"])
+        if "alpha_opt" in data:
+            self.alpha_opt.load_state_dict(data["alpha_opt"])
+        self.steps = data.get("steps", 0)

@@ -30,7 +30,7 @@ class DQNAgent(BaseAgent):
     def __init__(self, obs_size, n_actions, device, config):
         super().__init__(obs_size, n_actions, device, config)
 
-        hidden = config.get("hidden_size", 128)
+        hidden = config.get("hidden_size", 256)
         self.gamma = config.get("gamma", 0.99)
         self.epsilon = config.get("epsilon_start", 1.0)
         self.epsilon_min = config.get("epsilon_min", 0.01)
@@ -98,10 +98,15 @@ class DQNAgent(BaseAgent):
         return {
             "q": self.q.state_dict(),
             "q_target": self.q_target.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "epsilon": self.epsilon,
+            "steps": self.steps,
         }
 
     def load_state_dict(self, data):
         self.q.load_state_dict(data["q"])
         self.q_target.load_state_dict(data["q_target"])
+        if "optimizer" in data:
+            self.optimizer.load_state_dict(data["optimizer"])
         self.epsilon = data.get("epsilon", self.epsilon_min)
+        self.steps = data.get("steps", 0)

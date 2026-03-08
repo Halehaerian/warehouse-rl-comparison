@@ -148,12 +148,13 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
             # Algorithm-specific update
             if algo == "ppo":
-                agent.store_transition(state, action, reward, done)
+                # Pass terminated (not done) so truncated episodes still bootstrap future value
+                agent.store_transition(state, action, reward, terminated)
                 if agent.ready_to_update():
                     agent.update(next_state=next_state)
             else:
-                # DQN and SAC: store + train in update()
-                agent.update(state, action, reward, next_state, done)
+                # DQN and SAC: pass terminated (not done) so truncated episodes still bootstrap
+                agent.update(state, action, reward, next_state, terminated)
 
             ep_reward += reward
             state = next_state
