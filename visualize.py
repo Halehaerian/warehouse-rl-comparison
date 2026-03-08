@@ -390,32 +390,35 @@ def visualize(args):
 
     for episode in range(args.episodes):
         obs, info = env.reset()
-        if isinstance(obs, tuple):
-            states = [np.array(o) for o in obs]
-        else:
-            states = [np.array(obs)]
         steps = 0
         pickups = 0
         deliveries = 0
         print(f"Episode {episode + 1}/{args.episodes}")
 
         while True:
-            # Get action for each agent using the shared policy
+            # Get action for each agent independently using the shared policy
+            if isinstance(obs, tuple):
+                states = [np.array(o) for o in obs]
+            else:
+                states = [np.array(obs)]
+
+            # Ensure we have one state per env agent
+            n_env_agents = len(env.unwrapped.agents)
+            while len(states) < n_env_agents:
+                states.append(states[-1].copy())
+
             actions = [agent.select_action(s, training=False) for s in states]
             carrying_before = [a.carrying_shelf is not None for a in env.unwrapped.agents]
 
             if hasattr(env.action_space, "spaces"):
                 n = len(env.action_space.spaces)
-                wrapped_actions = tuple(actions[:n] + [0] * max(0, n - len(actions)))
+                wrapped_actions = tuple(actions[:n])
             else:
                 wrapped_actions = actions[0]
 
             next_obs, reward, terminated, truncated, info = env.step(wrapped_actions)
             done = terminated or truncated
-            if isinstance(next_obs, tuple):
-                states = [np.array(o) for o in next_obs]
-            else:
-                states = [np.array(next_obs)]
+            obs = next_obs  # update obs for next iteration's state building
             steps += 1
 
             carrying_after = [a.carrying_shelf is not None for a in env.unwrapped.agents]

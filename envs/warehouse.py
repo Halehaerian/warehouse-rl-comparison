@@ -189,9 +189,8 @@ class WarehouseWrapper(Wrapper):
             battery = self.battery_levels[i] if i < len(self.battery_levels) else self.max_battery
 
             goal = min(goals, key=lambda g: self._manhattan(pos, g)) if goals else (gw // 2, gh)
-            shelf = min(shelves, key=lambda s: self._manhattan(pos, s)) if shelves else (gw // 2, gh // 2)
 
-            # Target depends on mission state
+            # Target depends on mission state — must match _get_target exactly
             mission = self.mission_state[i] if i < len(self.mission_state) else SEEK_SHELF
             if mission == CHARGING:
                 charger_idx = self.agent_charger_numbers[i] if i < len(self.agent_charger_numbers) else 0
@@ -199,7 +198,15 @@ class WarehouseWrapper(Wrapper):
             elif carrying > 0.5:
                 target = goal
             else:
-                target = shelf
+                # Use the same claimed shelf that _get_target uses for reward shaping
+                claim = self.agent_shelf_claim[i] if i < len(self.agent_shelf_claim) else None
+                shelf_set = set(shelves)
+                if claim and claim in shelf_set:
+                    target = claim
+                elif shelves:
+                    target = min(shelves, key=lambda s: self._manhattan(pos, s))
+                else:
+                    target = (gw // 2, gh // 2)
 
             dx = (target[0] - pos[0]) / max(gw, 1)
             dy = (target[1] - pos[1]) / max(gh, 1)
@@ -360,8 +367,8 @@ class WarehouseWrapper(Wrapper):
             if was_carrying[i] != now_carrying[i]:
                 self.prev_potential[i] = None
 
-        # ---- Reward (main branch logic) ----
-        r = 0.0
+        # ---- Per-agent independent rewards ----
+        r_agents = [0.0] * self.n_agents
 
         for i in range(self.n_agents):
             act = action[i] if hasattr(action, "__iter__") else action
@@ -369,30 +376,29 @@ class WarehouseWrapper(Wrapper):
             battery = self.battery_levels[i]
             carrying = now_carrying[i]
 
-            r -= 0.5  # per-agent step penalty (each agent contributes independently)
+            # Step penalty
+            r_agents[i] -= 0.5
 
-            # 1) Potential-based distance shaping (from main branch)
+            # Potential-based distance shaping toward agent's own target
             target = self._get_target(i, p, carrying, battery)
             phi_now = self._potential(p, target)
-
             if self.prev_potential[i] is not None:
                 shaping = 0.99 * phi_now - self.prev_potential[i]
-                r += 3.0 * shaping
-
+                r_agents[i] += 3.0 * shaping
             self.prev_potential[i] = phi_now
 
-            # 2) Wall-bump penalty (only FORWARD=1, not NOOP=0)
+            # Wall-bump penalty
             if p == old_pos[i] and act == 1:
-                r -= 1.0
+                r_agents[i] -= 1.0
 
-            # 3) Toggle logic (wrong-shelf pickup already blocked by action masking)
+            # Toggle logic
             if act == 4:
                 if not was_carrying[i] and p in set(shelves):
-                    r += 3.0   # toggle at REQUESTED shelf -- good
+                    r_agents[i] += 3.0
                 elif was_carrying[i] and p in set(goals):
-                    r += 3.0   # toggle at goal to deliver -- good
+                    r_agents[i] += 3.0
                 else:
-                    r -= 0.5   # pointless toggle
+                    r_agents[i] -= 0.5
 
         # ---- Battery drain/charge ----
         for i in range(self.n_agents):
@@ -410,73 +416,72 @@ class WarehouseWrapper(Wrapper):
         for i in range(self.n_agents):
             battery = self.battery_levels[i]
 
-            # Enter CHARGING: battery low and not carrying
             if (self.mission_state[i] != CHARGING
                     and battery < self.battery_threshold
                     and not now_carrying[i]):
                 self.mission_state[i] = CHARGING
-                self.prev_potential[i] = None  # reset shaping toward charger
-                self.agent_shelf_claim[i] = None  # release claim while charging
+                self.prev_potential[i] = None
+                self.agent_shelf_claim[i] = None
 
-            # At charger while CHARGING
             if self.mission_state[i] == CHARGING:
                 if self._is_at_charger(pos[i], i):
-                    r += 5.0  # reward for being at charger when needed
+                    r_agents[i] += 5.0  # only this agent gets charging reward
                     if battery >= self.battery_resume:
                         self.mission_state[i] = SEEK_SHELF
-                        self.prev_potential[i] = None  # reset toward next shelf
-                        r += 10.0  # bonus for successful recharge
+                        self.prev_potential[i] = None
+                        r_agents[i] += 10.0  # only this agent gets recharge bonus
                         self.charging_events += 1
 
         # ---- Pickup milestone ----
         for i in range(self.n_agents):
             if (self.mission_state[i] == SEEK_SHELF
                     and not was_carrying[i] and now_carrying[i]):
-                r += 20.0
+                r_agents[i] += 20.0  # only picking agent rewarded
                 self.mission_state[i] = DELIVER
-                self.agent_shelf_claim[i] = None  # release claim on pickup
+                self.agent_shelf_claim[i] = None
 
-            # Wrong drop (dropped shelf off-goal)
+            # Wrong drop
             if self.mission_state[i] == DELIVER and was_carrying[i] and not now_carrying[i]:
-                check_r = sum(reward) if isinstance(reward, (list, tuple)) else reward
-                if check_r <= 0:
-                    r -= 30.0
+                if env_r <= 0:
+                    r_agents[i] -= 30.0
                     self.mission_state[i] = SEEK_SHELF
 
         # ---- Delivery milestone ----
         if env_r > 0:
-            # Track which agent(s) actually delivered this step
             for i in range(self.n_agents):
                 if was_carrying[i] and not now_carrying[i]:
+                    r_agents[i] += 50.0  # only delivering agent rewarded
                     self.agent_deliveries[i] += 1
                     self.deliveries_count += 1
-                    self.agent_shelf_claim[i] = None  # ensure claim cleared after delivery
+                    self.agent_shelf_claim[i] = None
                     self.mission_state[i] = SEEK_SHELF
                     self.prev_potential[i] = None
-            r += 50.0
-
-            # Track segment steps
             self.delivery_segment_steps.append(self.segment_steps)
             self.segment_steps = 0
 
         # ---- Termination ----
         battery_dead = any(b <= 0 for b in self.battery_levels)
-        # Episode ends when every agent has completed its own max_deliveries quota
         mission_done = all(self.agent_deliveries[i] >= self.max_deliveries for i in range(self.n_agents))
 
         if battery_dead:
             terminated = True
-            r -= 50.0  # battery death penalty
+            for i in range(self.n_agents):
+                if self.battery_levels[i] <= 0:
+                    r_agents[i] -= 50.0  # only the dead agent penalized
 
         if mission_done:
             terminated = True
-            # Reward completing all deliveries + bonus for battery efficiency
             battery_ratio = min(self.battery_levels) / self.max_battery
-            r += 100.0 + 50.0 * battery_ratio
+            completion_bonus = 100.0 + 50.0 * battery_ratio
+            for i in range(self.n_agents):
+                r_agents[i] += completion_bonus  # all agents share completion bonus
+
+        r = sum(r_agents)  # total for logging
 
         obs = self._extend_obs(obs)
         info.update({
             "battery_levels": self.battery_levels.copy(),
+            "per_agent_rewards": r_agents,
             "deliveries": self.deliveries_count,
             "agent_deliveries": self.agent_deliveries.copy(),
             "max_deliveries": self.max_deliveries,

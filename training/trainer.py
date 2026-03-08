@@ -33,8 +33,9 @@ def _wrap_action(env, actions):
     """Package per-agent action list into the tuple env.step() expects."""
     if hasattr(env.action_space, "spaces"):
         n = len(env.action_space.spaces)
-        padded = list(actions)[:n] + [0] * max(0, n - len(actions))
-        return tuple(padded)
+        # Never silently pad — caller must provide the right number of actions
+        assert len(actions) >= n, f"Expected {n} actions, got {len(actions)}"
+        return tuple(actions[:n])
     return actions[0]
 
 
@@ -147,25 +148,20 @@ def train(algo, env_config, battery_config, algo_config, training_config,
             done = terminated or truncated
             next_states = _obs_to_array(next_obs)
 
-            # Build per-agent rewards: each agent gets the shared reward
-            # scaled by its own delivery progress so gradients are independent
-            battery_levels = info.get("battery_levels", [])
-            agent_deliveries = info.get("agent_deliveries", [])
-            n = len(states)
+            # Use per-agent rewards so each agent trains on its own signal only
+            per_agent_rewards = info.get("per_agent_rewards", None)
             shared_r = _scalar_reward(reward)
-            per_agent_rewards = [shared_r] * n
+            if per_agent_rewards is None:
+                per_agent_rewards = [shared_r] * len(states)
 
-            # Algorithm-specific update — store/update a transition per agent
+            # Algorithm-specific update — each agent uses its own reward
             if algo == "ppo":
-                # Each agent stores its own (state, action, reward) tuple
                 for s, a, r_i in zip(states, actions, per_agent_rewards):
                     agent.store_transition(s, a, r_i, terminated)
                 if agent.ready_to_update():
-                    # Use mean of next states for value bootstrap
                     bootstrap_state = next_states[0] if next_states else states[0]
                     agent.update(next_state=bootstrap_state)
             else:
-                # DQN and SAC: per-agent transition
                 for s, a, ns, r_i in zip(states, actions, next_states, per_agent_rewards):
                     agent.update(s, a, r_i, ns, terminated)
 
