@@ -127,16 +127,12 @@ PPO_CONFIG = {
 SAC_CONFIG = {
     "lr": 3e-4,
     "alpha": 3e-4,
-    "reward_scale": 2,
-    "n_actions" : 1,
     "layer1_size": 256,
     "layer2_size": 256,
     "gamma": 0.99,
     "tau": 0.005,
-    "batch_size": 128,
-    "memory_size": 100000,
-    "hidden_size": 256,
-    "warmup": 500,
+    "batch_size": 256,
+    "memory_size": 1000000,
 }
 
 # --- Training ---
