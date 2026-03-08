@@ -25,7 +25,6 @@ class SACAgent(BaseAgent):
         self.value = ValueNetwork(config['lr'], obs_size).to(self.device)
         self.target_value = ValueNetwork(config['lr'], obs_size).to(self.device)
 
-        self.scale = config['reward_scale']
         self.update_network_parameters(tau=1)
 
         self.steps = 0
