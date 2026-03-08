@@ -1,4 +1,4 @@
-#Code derived form Phil Tabor's Youtube video https://www.youtube.com/watch?v=ioidsRlf79o
+#Code adapted form Phil Tabor's Youtube video https://www.youtube.com/watch?v=ioidsRlf79o
 
 import os
 import torch as T
@@ -7,33 +7,37 @@ import numpy as np
 
 from agents.sac.buffer import ReplayBuffer
 from agents.sac.networks import ActorNetwork, CriticNetwork, ValueNetwork
+from agents.base import BaseAgent
 
-
-class SACAgent():
-    def __init__(self, n_actions, config, input_dims):
+class SACAgent(BaseAgent):
+    def __init__(self, obs_size, n_actions, device, config):
+        super().__init__(obs_size, n_actions, device, config)
         self.gamma = config['gamma']
         self.tau = config['tau']
-        self.memory = ReplayBuffer(config['memory_size'], input_dims, n_actions)
+        self.memory = ReplayBuffer(config['memory_size'], obs_size, n_actions)
         self.batch_size = config['batch_size']
         self.n_actions = n_actions
+        self.device = device
 
-        self.actor = ActorNetwork(config['alpha'], input_dims, n_actions=n_actions, name='actor')
-        self.critic_1 = CriticNetwork(config['lr'], input_dims, n_actions=n_actions, name='critic_1')
-        self.critic_2 = CriticNetwork(config['lr'], input_dims, n_actions=n_actions, name='critic_2')
-        self.value = ValueNetwork(config['lr'], input_dims, name='value')
-        self.target_value = ValueNetwork(config['lr'], input_dims, name='target_value')
+        self.actor = ActorNetwork(config['alpha'], obs_size, n_actions=n_actions).to(self.device)
+        self.critic_1 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
+        self.critic_2 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
+        self.value = ValueNetwork(config['lr'], obs_size).to(self.device)
+        self.target_value = ValueNetwork(config['lr'], obs_size).to(self.device)
 
         self.scale = config['reward_scale']
         self.update_network_parameters(tau=1)
 
-    def select_action(self, observation, training=True):
-        if training:
-           state = T.Tensor([observation]).to(self.actor.device)
-           action,_ = self.actor.sample(state)
-           return action 
+        self.steps = 0
 
-    def remember(self, state, action, reward, new_state, done):
-        self.memory.store_transition(state, action, reward, new_state, done)
+    def select_action(self, observation, training=True):
+        #state = T.Tensor([observation]).to(self.device)
+        state = T.as_tensor([observation], dtype=T.float32, device=self.device)
+        with T.no_grad():
+           action,_ = self.actor.sample(state)
+           if not training:
+              action = np.argmax(action.numpy())
+        return action
 
     def update_network_parameters(self, tau=None):
         if tau is None:
@@ -49,33 +53,21 @@ class SACAgent():
             value_state_dict[name] = tau* value_state_dict[name].clone() + (1-tau)*target_value_state_dict[name].clone()
         self.target_value.load_state_dict(value_state_dict)
 
-    def save(self, location): #We ignore location here.
-        print('....saving models....')
-        self.actor.save_checkpoint()
-        self.value.save_checkpoint()
-        self.target_value.save_checkpoint()
-        self.critic_1.save_checkpoint()
-        self.critic_2.save_checkpoint()
+    def update(self, state, action, reward, next_state, done, **kwargs):
+        self.memory.store_transition(state, action, reward, next_state, done)
 
-    def load_models(self):
-        print('....loading models....')
-        self.actor.load_checkpoint()
-        self.value.load_checkpoint()
-        self.target_value.load_checkpoint()
-        self.critic_1.load_checkpoint()
-        self.critic_2.load_checkpoint()
+        self.steps += 1
 
-    def update(self):
         if self.memory.mem_cntr < self.batch_size:
            return
 
         state, new_state, action, reward, done = self.memory.sample_buffer(self.batch_size)
 
-        reward = T.tensor(reward, dtype=T.float).to(self.actor.device)
-        done = T.tensor(done).to(self.actor.device)
-        state_ = T.tensor(new_state, dtype=T.float).to(self.actor.device)
-        state = T.tensor(state, dtype=T.float).to(self.actor.device)
-        action = T.tensor(action, dtype=T.float).to(self.actor.device)
+        reward = T.tensor(reward, dtype=T.float).to(self.device)
+        done = T.tensor(done).to(self.device)
+        state_ = T.tensor(new_state, dtype=T.float).to(self.device)
+        state = T.tensor(state, dtype=T.float).to(self.device)
+        action = T.tensor(action, dtype=T.float).to(self.device)
         value = self.value(state).view(-1)
         value_ = self.target_value(state_).view(-1)
         value_[done] = 0.0
@@ -93,7 +85,6 @@ class SACAgent():
         value_loss.backward(retain_graph=True)
         self.value.optimizer.step()
 
-
         # Training the Actor network
         actions, log_probs = self.actor.sample(state)
         q1_new_policy = self.critic_1.forward(state, actions)
@@ -106,7 +97,6 @@ class SACAgent():
         actor_loss = T.mean(actor_loss)
         actor_loss.backward(retain_graph = True)
         self.actor.optimizer.step()
-
 
         # Training Critic networks
         self.critic_1.optimizer.zero_grad()
@@ -124,5 +114,23 @@ class SACAgent():
 
         self.update_network_parameters()
 
+        return {"critic_loss": critic_loss.item(), "actor_loss": actor_loss.item()}
+
     def end_episode(self):
         pass
+
+    def state_dict(self):
+        return {
+            "actor": self.actor.state_dict(),
+            "critic_1": self.critic_1.state_dict(),
+            "critic_2": self.critic_2.state_dict(),
+            "value": self.value.state_dict(),
+            "target_value" : self.target_value.state_dict(),
+         }
+
+    def load_state_dict(self, data):
+        self.actor.load_state_dict(data["actor"])
+        self.critic_1.load_state_dict(data["critic_1"])
+        self.critic_2.load_state_dict(data["critic_2"])
+        self.value.load_state_dict(data["value"])
+        self.target_value.load_state_dict(data["target_value"])
