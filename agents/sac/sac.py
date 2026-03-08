@@ -100,7 +100,7 @@ class SACAgent(BaseAgent):
         # Training Critic networks
         self.critic_1.optimizer.zero_grad()
         self.critic_2.optimizer.zero_grad()
-        q_hat = self.scale*reward + self.gamma*value_
+        q_hat = reward + self.gamma*value_
         q1_old_policy = self.critic_1.forward(state, action).view(-1)
         q2_old_policy = self.critic_2.forward(state, action).view(-1)
         critic_1_loss = 0.5*F.mse_loss(q1_old_policy, q_hat)
