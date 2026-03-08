@@ -12,54 +12,54 @@ Square grid sizes available in RWARE:
 
 # --- Environment ---
 
-# Default: 10x10 square grid, 22 shelves (good for training & demo)
+# Default: 10x10 square grid, 22 shelves, 2 agents (episode ends after each agent completes 1 delivery)
 ENV_CONFIG = {
     "max_steps": 500,
-    "max_deliveries": 5,
+    "max_deliveries": 1,  # per agent
     "shelf_columns": 3,
     "column_height": 1,
     "shelf_rows": 4,
-    "n_agents": 1,
+    "n_agents": 2,
 }
 
 # Small: same as default (10x10 is the smallest square RWARE supports)
 ENV_CONFIG_SMALL = {
     "max_steps": 500,
-    "max_deliveries": 5,
+    "max_deliveries": 1,  # per agent
     "shelf_columns": 3,
     "column_height": 1,
     "shelf_rows": 4,
-    "n_agents": 1,
+    "n_agents": 2,
 }
 
 # 10x10 square grid, 22 shelves
 ENV_CONFIG_10x10 = {
     "max_steps": 500,
-    "max_deliveries": 5,
+    "max_deliveries": 1,  # per agent
     "shelf_columns": 3,
     "column_height": 1,
     "shelf_rows": 4,
-    "n_agents": 1,
+    "n_agents": 2,
 }
 
 # 16x16 square grid, 68 shelves (larger, needs more training)
 ENV_CONFIG_16x16 = {
     "max_steps": 800,
-    "max_deliveries": 5,
+    "max_deliveries": 1,  # per agent
     "shelf_columns": 5,
     "column_height": 1,
     "shelf_rows": 7,
-    "n_agents": 1,
+    "n_agents": 2,
 }
 
 # 22x22 square grid, 138 shelves (hardest)
 ENV_CONFIG_22x22 = {
     "max_steps": 1200,
-    "max_deliveries": 5,
+    "max_deliveries": 1,  # per agent
     "shelf_columns": 7,
     "column_height": 1,
     "shelf_rows": 10,
-    "n_agents": 1,
+    "n_agents": 2,
 }
 
 # Named env presets (used by train.py --env)
@@ -85,7 +85,7 @@ BATTERY_CONFIG = {
     "charge_rate": 25.0,
     "battery_threshold": 30.0,
     "battery_resume": 80.0,
-    "charger_location": (0, 0),
+    "auto_charger_positions": True,  # Charger 0 at (0,0), Charger 1 at (gw-1, 0)
 }
 
 # --- DQN (Double DQN with tuned exploration) ---
@@ -94,7 +94,7 @@ DQN_CONFIG = {
     "gamma": 0.99,
     "epsilon_start": 1.0,
     "epsilon_min": 0.01,
-    "epsilon_decay": 0.9990,      # reaches 0.01 ~ep 4600 (tuned for 10k)
+    "epsilon_decay": 0.9993,      # reaches 0.01 ~ep 5800 (tuned for 8k episodes)
     "batch_size": 128,
     "memory_size": 100000,
     "hidden_size": 256,
@@ -118,8 +118,8 @@ PPO_CONFIG = {
     "n_layers": 2,
     "use_layer_norm": True,
     "vf_coef": 0.5,
-    "ent_coef": 0.01,         # lowered: 0.05 caused random battery deaths (death=-1.0 = 1 delivery)
-    "reward_scale": 0.02,     # raised from 0.01 -- stronger delivery signal
+    "ent_coef": 0.02,         # slightly higher: 2-agent coordination needs more early exploration
+    "reward_scale": 0.01,     # lowered: max reward ~270 now (was ~150), keeps gradients stable
     "max_grad_norm": 0.5,
 }
 

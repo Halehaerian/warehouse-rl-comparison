@@ -46,17 +46,18 @@ class BatteryRenderer:
     - Goals (dark gray)
     """
     
-    def __init__(self, env, charger_location=(0, 0)):
+    def __init__(self, env, charger_locations=None):
         self.env = env.unwrapped
-        self.charger_location = charger_location
+        self.charger_locations = charger_locations or [(0, 0)]
         
         self.rows, self.cols = self.env.grid_size
         self.grid_size = 30
         self.icon_size = 20
+        self.grid_offset = 80  # pixels at bottom for per-agent battery bars
         
-        # Window dimensions with extra space for battery bar
-        self.width = 1 + self.cols * (self.grid_size + 1)
-        self.height = 2 + self.rows * (self.grid_size + 1) + 60
+        # Window dimensions
+        self.width = max(300, 1 + self.cols * (self.grid_size + 1))
+        self.height = 2 + self.rows * (self.grid_size + 1) + self.grid_offset
         
         self.window = pyglet.window.Window(
             width=self.width,
@@ -66,11 +67,11 @@ class BatteryRenderer:
         self.window.on_close = self._on_close
         
         # State
-        self.battery_level = 100.0
+        self.battery_levels = [100.0, 100.0]
+        self.mission_states = [0, 0]
         self.step_count = 0
         self.deliveries = 0
         self.pickups = 0
-        self.is_carrying = False
         self.closed = False
         
         # Colors
@@ -78,8 +79,9 @@ class BatteryRenderer:
         self._GRID = (200, 200, 200)
         self._SHELF = (72, 61, 139)
         self._SHELF_REQ = (0, 128, 128)
-        self._AGENT = (255, 140, 0)
-        self._AGENT_LOADED = (255, 0, 0)
+        # Per-agent: agent 0 = orange, agent 1 = blue
+        self._AGENT_COLORS = [(255, 140, 0), (30, 120, 255)]
+        self._AGENT_LOADED_COLORS = [(220, 50, 50), (30, 50, 220)]
         self._GOAL = (60, 60, 60)
         self._CHARGER = (255, 215, 0)
         self._BATTERY_BG = (100, 100, 100)
@@ -94,18 +96,18 @@ class BatteryRenderer:
         glColor3ub(*self._GRID)
         glBegin(GL_LINES)
         for r in range(self.rows + 1):
-            y = r * (self.grid_size + 1) + 60
+            y = r * (self.grid_size + 1) + self.grid_offset
             glVertex2f(0, y)
             glVertex2f(self.width, y)
         for c in range(self.cols + 1):
             x = c * (self.grid_size + 1)
-            glVertex2f(x, 60)
+            glVertex2f(x, self.grid_offset)
             glVertex2f(x, self.height)
         glEnd()
     
     def _draw_rect(self, x, y, color, padding=2):
         px = x * (self.grid_size + 1) + padding
-        py = y * (self.grid_size + 1) + padding + 60
+        py = y * (self.grid_size + 1) + padding + self.grid_offset
         size = self.grid_size - 2 * padding
         
         glColor3ub(*color)
@@ -117,57 +119,86 @@ class BatteryRenderer:
         glEnd()
     
     def _draw_charger(self):
-        x, y = self.charger_location
-        px = x * (self.grid_size + 1)
-        py = y * (self.grid_size + 1) + 60
-        size = self.grid_size
-        
-        # Yellow background
-        glColor3ub(*self._CHARGER)
-        glBegin(GL_QUADS)
-        glVertex2f(px + 2, py + 2)
-        glVertex2f(px + size - 2, py + 2)
-        glVertex2f(px + size - 2, py + size - 2)
-        glVertex2f(px + 2, py + size - 2)
-        glEnd()
-        
-        # Lightning bolt
-        glColor3ub(0, 0, 0)
-        glLineWidth(2.0)
-        cx = px + size // 2
-        cy = py + size // 2
-        glBegin(GL_LINE_STRIP)
-        glVertex2f(cx + 2, cy + 10)
-        glVertex2f(cx - 4, cy + 2)
-        glVertex2f(cx + 1, cy + 2)
-        glVertex2f(cx - 2, cy - 10)
-        glVertex2f(cx + 4, cy - 2)
-        glVertex2f(cx - 1, cy - 2)
-        glVertex2f(cx + 2, cy + 10)
+        for idx, (x, y) in enumerate(self.charger_locations):
+            px = x * (self.grid_size + 1)
+            py = y * (self.grid_size + 1) + self.grid_offset
+            size = self.grid_size
+
+            # Yellow background
+            glColor3ub(*self._CHARGER)
+            glBegin(GL_QUADS)
+            glVertex2f(px + 2, py + 2)
+            glVertex2f(px + size - 2, py + 2)
+            glVertex2f(px + size - 2, py + size - 2)
+            glVertex2f(px + 2, py + size - 2)
+            glEnd()
+
+            # Lightning bolt
+            glColor3ub(0, 0, 0)
+            glLineWidth(2.0)
+            cx = px + size // 2
+            cy = py + size // 2
+            glBegin(GL_LINE_STRIP)
+            glVertex2f(cx + 2, cy + 10)
+            glVertex2f(cx - 4, cy + 2)
+            glVertex2f(cx + 1, cy + 2)
+            glVertex2f(cx - 2, cy - 10)
+            glVertex2f(cx + 4, cy - 2)
+            glVertex2f(cx - 1, cy - 2)
+            glVertex2f(cx + 2, cy + 10)
+            glEnd()
+            glLineWidth(1.0)
+    
+    def _draw_border(self, x, y, color, padding=1):
+        """Draw a colored outline around a grid cell (for claimed shelf highlight)."""
+        px = x * (self.grid_size + 1) + padding
+        py = y * (self.grid_size + 1) + padding + self.grid_offset
+        size = self.grid_size - 2 * padding
+        glColor3ub(*color)
+        glLineWidth(3.0)
+        glBegin(GL_LINE_LOOP)
+        glVertex2f(px, py)
+        glVertex2f(px + size, py)
+        glVertex2f(px + size, py + size)
+        glVertex2f(px, py + size)
         glEnd()
         glLineWidth(1.0)
-    
-    def _draw_shelves(self):
+
+    def _draw_shelves(self, shelf_claims=None):
         requested = set()
         if hasattr(self.env, 'request_queue'):
             requested = {(s.x, s.y) for s in self.env.request_queue}
-        
+
+        # Map claimed position -> agent index for border highlight
+        claim_map = {}
+        if shelf_claims:
+            for i, claim in enumerate(shelf_claims):
+                if claim is not None:
+                    claim_map[claim] = i
+
         for shelf in self.env.shelfs:
-            if (shelf.x, shelf.y) in requested:
+            pos = (shelf.x, shelf.y)
+            if pos in requested:
                 self._draw_rect(shelf.x, shelf.y, self._SHELF_REQ, padding=3)
             else:
                 self._draw_rect(shelf.x, shelf.y, self._SHELF, padding=4)
+            # Colored border = this shelf is claimed by that agent
+            if pos in claim_map:
+                agent_i = claim_map[pos]
+                border_color = self._AGENT_COLORS[agent_i % len(self._AGENT_COLORS)]
+                self._draw_border(shelf.x, shelf.y, border_color)
     
     def _draw_goals(self):
         for gx, gy in self.env.goals:
             self._draw_rect(gx, gy, self._GOAL, padding=1)
     
     def _draw_agents(self):
-        for agent in self.env.agents:
-            color = self._AGENT_LOADED if agent.carrying_shelf else self._AGENT
+        for idx, agent in enumerate(self.env.agents):
+            colors = self._AGENT_LOADED_COLORS if agent.carrying_shelf else self._AGENT_COLORS
+            color = colors[idx % len(colors)]
             
             px = agent.x * (self.grid_size + 1)
-            py = agent.y * (self.grid_size + 1) + 60
+            py = agent.y * (self.grid_size + 1) + self.grid_offset
             size = self.grid_size
             
             # Draw agent as circle
@@ -193,77 +224,74 @@ class BatteryRenderer:
             glVertex2f(cx + dx * radius * 0.8, cy + dy * radius * 0.8)
             glEnd()
             glLineWidth(1.0)
+
+            # Agent number label
+            pyglet.text.Label(
+                str(idx), font_name='Arial', font_size=8, bold=True,
+                x=cx, y=cy, anchor_x='center', anchor_y='center',
+                color=(255, 255, 255, 255)
+            ).draw()
     
     def _draw_battery_bar(self):
-        bar_x = 10
-        bar_y = 15
-        bar_width = self.width - 20
-        bar_height = 25
-        
-        # Background
-        glColor3ub(*self._BATTERY_BG)
-        glBegin(GL_QUADS)
-        glVertex2f(bar_x, bar_y)
-        glVertex2f(bar_x + bar_width, bar_y)
-        glVertex2f(bar_x + bar_width, bar_y + bar_height)
-        glVertex2f(bar_x, bar_y + bar_height)
-        glEnd()
-        
-        # Battery fill
-        fill_width = (self.battery_level / 100.0) * (bar_width - 4)
-        if self.battery_level > 50:
-            color = self._BATTERY_GOOD
-        elif self.battery_level > 20:
-            color = self._BATTERY_MED
-        else:
-            color = self._BATTERY_LOW
-        
-        glColor3ub(*color)
-        glBegin(GL_QUADS)
-        glVertex2f(bar_x + 2, bar_y + 2)
-        glVertex2f(bar_x + 2 + fill_width, bar_y + 2)
-        glVertex2f(bar_x + 2 + fill_width, bar_y + bar_height - 2)
-        glVertex2f(bar_x + 2, bar_y + bar_height - 2)
-        glEnd()
-        
-        # Labels
-        label = pyglet.text.Label(
-            f"Battery: {self.battery_level:.1f}%  |  Step: {self.step_count}  |  "
-            f"Pickups: {self.pickups}  |  Deliveries: {self.deliveries}",
-            font_name='Arial', font_size=10,
-            x=self.width // 2, y=bar_y + bar_height // 2,
+        n = max(len(self.battery_levels), 1)
+        bar_height = 22
+        total_w = self.width - 20
+        bar_width = (total_w - (n - 1) * 5) // n
+
+        for i in range(n):
+            bar_x = 10 + i * (bar_width + 5)
+            bar_y = 10
+            bl = self.battery_levels[i] if i < len(self.battery_levels) else 100.0
+
+            # Background
+            glColor3ub(*self._BATTERY_BG)
+            glBegin(GL_QUADS)
+            glVertex2f(bar_x, bar_y)
+            glVertex2f(bar_x + bar_width, bar_y)
+            glVertex2f(bar_x + bar_width, bar_y + bar_height)
+            glVertex2f(bar_x, bar_y + bar_height)
+            glEnd()
+
+            # Battery fill
+            fill_width = (bl / 100.0) * (bar_width - 4)
+            color = self._BATTERY_GOOD if bl > 50 else (self._BATTERY_MED if bl > 20 else self._BATTERY_LOW)
+            glColor3ub(*color)
+            glBegin(GL_QUADS)
+            glVertex2f(bar_x + 2, bar_y + 2)
+            glVertex2f(bar_x + 2 + fill_width, bar_y + 2)
+            glVertex2f(bar_x + 2 + fill_width, bar_y + bar_height - 2)
+            glVertex2f(bar_x + 2, bar_y + bar_height - 2)
+            glEnd()
+
+            # Label inside bar
+            ms = self.mission_states[i] if i < len(self.mission_states) else 0
+            state_str = "CHARGING" if ms == 2 else ("CARRYING" if ms == 1 else "SEEKING")
+            pyglet.text.Label(
+                f"A{i}: {bl:.0f}%  {state_str}",
+                font_name='Arial', font_size=9,
+                x=bar_x + bar_width // 2, y=bar_y + bar_height // 2,
+                anchor_x='center', anchor_y='center',
+                color=(255, 255, 255, 255)
+            ).draw()
+
+        # Step / delivery summary
+        pyglet.text.Label(
+            f"Step: {self.step_count}  |  Deliveries: {self.deliveries}  |  Pickups: {self.pickups}",
+            font_name='Arial', font_size=9,
+            x=self.width // 2, y=42,
             anchor_x='center', anchor_y='center',
-            color=(255, 255, 255, 255)
-        )
-        label.draw()
-        
-        if self.is_charging:
-            status = "CHARGING ⚡"
-            status_color = (255, 215, 0, 255)
-        elif self.is_carrying:
-            status = "CARRYING SHELF →"
-            status_color = (255, 100, 100, 255)
-        else:
-            status = "Seeking shelf..."
-            status_color = (150, 150, 150, 255)
-        status_label = pyglet.text.Label(
-            status, font_name='Arial', font_size=9,
-            x=self.width // 2, y=bar_y + bar_height + 8,
-            anchor_x='center', anchor_y='center',
-            color=status_color
-        )
-        status_label.draw()
+            color=(30, 30, 30, 255)
+        ).draw()
     
-    def render(self, battery_level, step_count, deliveries, pickups, is_carrying, is_charging=False):
+    def render(self, battery_levels, step_count, deliveries, pickups, mission_states, shelf_claims=None):
         if self.closed:
             return False
         
-        self.battery_level = battery_level
+        self.battery_levels = list(battery_levels)
+        self.mission_states = list(mission_states)
         self.step_count = step_count
         self.deliveries = deliveries
         self.pickups = pickups
-        self.is_carrying = is_carrying
-        self.is_charging = is_charging
         
         glClearColor(1, 1, 1, 1)
         glClear(GL_COLOR_BUFFER_BIT)
@@ -271,7 +299,7 @@ class BatteryRenderer:
         self._draw_grid()
         self._draw_charger()
         self._draw_goals()
-        self._draw_shelves()
+        self._draw_shelves(shelf_claims)
         self._draw_agents()
         self._draw_battery_bar()
         
@@ -341,8 +369,10 @@ def visualize(args):
 
     # Create environment
     env = make_env(env_config, battery_config)
-    charger = tuple(battery_config.get("charger_location", (0, 0)))
-    renderer = BatteryRenderer(env, charger_location=charger)
+    # Trigger reset to auto-compute charger positions
+    env.reset()
+    charger_locs = getattr(env, "charger_locations", [(0, 0)])
+    renderer = BatteryRenderer(env, charger_locations=charger_locs)
 
     # Create and load agent
     device = torch.device("cpu")
@@ -360,40 +390,51 @@ def visualize(args):
 
     for episode in range(args.episodes):
         obs, info = env.reset()
-        state = np.array(obs[0]) if isinstance(obs, tuple) else np.array(obs)
+        if isinstance(obs, tuple):
+            states = [np.array(o) for o in obs]
+        else:
+            states = [np.array(obs)]
         steps = 0
         pickups = 0
         deliveries = 0
         print(f"Episode {episode + 1}/{args.episodes}")
 
         while True:
-            action = agent.select_action(state, training=False)
-            carrying_before = env.unwrapped.agents[0].carrying_shelf is not None
+            # Get action for each agent using the shared policy
+            actions = [agent.select_action(s, training=False) for s in states]
+            carrying_before = [a.carrying_shelf is not None for a in env.unwrapped.agents]
 
             if hasattr(env.action_space, "spaces"):
-                actions = tuple([action] + [0] * (len(env.action_space.spaces) - 1))
+                n = len(env.action_space.spaces)
+                wrapped_actions = tuple(actions[:n] + [0] * max(0, n - len(actions)))
             else:
-                actions = action
+                wrapped_actions = actions[0]
 
-            next_obs, reward, terminated, truncated, info = env.step(actions)
+            next_obs, reward, terminated, truncated, info = env.step(wrapped_actions)
             done = terminated or truncated
-            state = np.array(next_obs[0]) if isinstance(next_obs, tuple) else np.array(next_obs)
+            if isinstance(next_obs, tuple):
+                states = [np.array(o) for o in next_obs]
+            else:
+                states = [np.array(next_obs)]
             steps += 1
 
-            carrying_after = env.unwrapped.agents[0].carrying_shelf is not None
-            if not carrying_before and carrying_after:
-                pickups += 1
-                total_pickups += 1
+            carrying_after = [a.carrying_shelf is not None for a in env.unwrapped.agents]
+            for before, after in zip(carrying_before, carrying_after):
+                if not before and after:
+                    pickups += 1
+                    total_pickups += 1
 
             new_del = info.get("deliveries", 0)
             if new_del > deliveries:
                 total_deliveries += new_del - deliveries
                 deliveries = new_del
 
-            battery = info.get("battery_levels", [100])[0]
-            is_charging = (hasattr(env, "mission_state") and env.mission_state[0] == 2)
+            # Per-agent data for renderer
+            battery_levels = info.get("battery_levels", [100, 100])
+            mission_states = getattr(env, "mission_state", [0] * len(battery_levels))
+            shelf_claims = getattr(env, "agent_shelf_claim", None)
 
-            if not renderer.render(battery, steps, deliveries, pickups, carrying_after, is_charging):
+            if not renderer.render(battery_levels, steps, deliveries, pickups, mission_states, shelf_claims):
                 renderer.close()
                 env.close()
                 return

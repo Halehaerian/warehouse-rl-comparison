@@ -23,18 +23,19 @@ AGENT_CLASSES = {
 
 
 def _obs_to_array(obs):
-    """Convert possibly-tuple observation to numpy array (first agent)."""
+    """Convert observation to list of numpy arrays, one per agent."""
     if isinstance(obs, tuple):
-        return np.asarray(obs[0], dtype=np.float32)
-    return np.asarray(obs, dtype=np.float32)
+        return [np.asarray(o, dtype=np.float32) for o in obs]
+    return [np.asarray(obs, dtype=np.float32)]
 
 
-def _wrap_action(env, action):
-    """Wrap single-agent action into multi-agent tuple if needed."""
+def _wrap_action(env, actions):
+    """Package per-agent action list into the tuple env.step() expects."""
     if hasattr(env.action_space, "spaces"):
         n = len(env.action_space.spaces)
-        return tuple([action] + [0] * (n - 1))  # others NOOP (Action.NOOP=0)
-    return action
+        padded = list(actions)[:n] + [0] * max(0, n - len(actions))
+        return tuple(padded)
+    return actions[0]
 
 
 def _scalar_reward(reward):
@@ -87,8 +88,8 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     # Determine obs/action sizes from env (use seed for first reset if reproducibility)
     reset_kw = {"seed": seed} if seed is not None else {}
     obs, _ = env.reset(**reset_kw)
-    state = _obs_to_array(obs)
-    obs_size = state.shape[0]
+    states = _obs_to_array(obs)
+    obs_size = states[0].shape[0]
     n_actions = env.action_space.spaces[0].n if hasattr(env.action_space, "spaces") else env.action_space.n
 
     # Create agent
@@ -135,36 +136,48 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         # Per-episode seed for reproducibility (Gymnasium)
         reset_kw = {"seed": seed + ep} if seed is not None else {}
         obs, info = env.reset(**reset_kw)
-        state = _obs_to_array(obs)
+        states = _obs_to_array(obs)
         ep_reward = 0.0
         done = False
 
         while not done:
-            action = agent.select_action(state, training=True)
-            next_obs, reward, terminated, truncated, info = env.step(_wrap_action(env, action))
+            # Get an action for each agent using the same (shared) policy
+            actions = [agent.select_action(s, training=True) for s in states]
+            next_obs, reward, terminated, truncated, info = env.step(_wrap_action(env, actions))
             done = terminated or truncated
-            reward = _scalar_reward(reward)
-            next_state = _obs_to_array(next_obs)
+            next_states = _obs_to_array(next_obs)
 
-            # Algorithm-specific update
+            # Build per-agent rewards: each agent gets the shared reward
+            # scaled by its own delivery progress so gradients are independent
+            battery_levels = info.get("battery_levels", [])
+            agent_deliveries = info.get("agent_deliveries", [])
+            n = len(states)
+            shared_r = _scalar_reward(reward)
+            per_agent_rewards = [shared_r] * n
+
+            # Algorithm-specific update — store/update a transition per agent
             if algo == "ppo":
-                # Pass terminated (not done) so truncated episodes still bootstrap future value
-                agent.store_transition(state, action, reward, terminated)
+                # Each agent stores its own (state, action, reward) tuple
+                for s, a, r_i in zip(states, actions, per_agent_rewards):
+                    agent.store_transition(s, a, r_i, terminated)
                 if agent.ready_to_update():
-                    agent.update(next_state=next_state)
+                    # Use mean of next states for value bootstrap
+                    bootstrap_state = next_states[0] if next_states else states[0]
+                    agent.update(next_state=bootstrap_state)
             else:
-                # DQN and SAC: pass terminated (not done) so truncated episodes still bootstrap
-                agent.update(state, action, reward, next_state, terminated)
+                # DQN and SAC: per-agent transition
+                for s, a, ns, r_i in zip(states, actions, next_states, per_agent_rewards):
+                    agent.update(s, a, r_i, ns, terminated)
 
-            ep_reward += reward
-            state = next_state
+            ep_reward += shared_r
+            states = next_states
 
         agent.end_episode()
 
         # PPO: flush remaining rollout only if substantial (avoid noisy micro-updates)
         min_flush = min(getattr(agent, "rollout_len", 128), 512)
         if algo == "ppo" and len(agent.buf_states) >= min_flush:
-            agent.update(next_state=state)
+            agent.update(next_state=states[0])
 
         metrics.log_episode(ep, ep_reward, env.total_steps, info,
                             epsilon=getattr(agent, "epsilon", None))

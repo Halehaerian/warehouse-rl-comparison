@@ -32,8 +32,8 @@ DELIVER = 1
 CHARGING = 2
 
 # Extra observation dimensions
-# pos(2) + target(2) + dir_to_target(2) + facing_onehot(4) + carrying(1) + battery(1)
-EXTRA_OBS_DIMS = 12
+# pos(2) + target(2) + dir_to_target(2) + facing_onehot(4) + carrying(1) + battery(1) + agent_id(1)
+EXTRA_OBS_DIMS = 13
 
 
 class WarehouseWrapper(Wrapper):
@@ -74,7 +74,15 @@ class WarehouseWrapper(Wrapper):
         self.charge_rate = bc.get("charge_rate", 25.0)
         self.battery_threshold = bc.get("battery_threshold", 25.0)
         self.battery_resume = bc.get("battery_resume", 70.0)
-        self.charger_location = tuple(bc.get("charger_location", (0, 0)))
+        # Support multiple charger locations (one per agent)
+        charger_locs = bc.get("charger_locations", None)
+        if charger_locs is None:
+            single = bc.get("charger_location", (0, 0))
+            charger_locs = [single, single]
+        self.charger_locations = [tuple(loc) for loc in charger_locs]
+        self._auto_charger_positions = bc.get("auto_charger_positions", True)
+        # Assign charger number to each agent: agent 0 -> charger 0, agent 1 -> charger 1
+        self.agent_charger_numbers = [i % len(self.charger_locations) for i in range(self.n_agents)]
 
         self._setup_observation_space()
 
@@ -88,12 +96,12 @@ class WarehouseWrapper(Wrapper):
             new_spaces = []
             for sp in orig.spaces:
                 lo = np.concatenate([sp.low, [-1.0] * 2, [0.0] * (EXTRA_OBS_DIMS - 2)])
-                hi = np.concatenate([sp.high, [1.0] * 6, [1.0] * 4, [1.0], [1.0]])
+                hi = np.concatenate([sp.high, [1.0] * 6, [1.0] * 4, [1.0], [1.0], [1.0]])
                 new_spaces.append(Box(low=lo.astype(np.float32), high=hi.astype(np.float32)))
             self.observation_space = TupleSpace(new_spaces)
         else:
             lo = np.concatenate([orig.low, [-1.0] * 2, [0.0] * (EXTRA_OBS_DIMS - 2)])
-            hi = np.concatenate([orig.high, [1.0] * 6, [1.0] * 4, [1.0], [1.0]])
+            hi = np.concatenate([orig.high, [1.0] * 6, [1.0] * 4, [1.0], [1.0], [1.0]])
             self.observation_space = Box(low=lo.astype(np.float32), high=hi.astype(np.float32))
 
     # ------------------------------------------------------------------
@@ -150,8 +158,9 @@ class WarehouseWrapper(Wrapper):
             return 0
         return min(self._manhattan(pos, t) for t in targets)
 
-    def _is_at_charger(self, pos):
-        return pos == self.charger_location
+    def _is_at_charger(self, pos, agent_idx=0):
+        charger_idx = self.agent_charger_numbers[agent_idx % len(self.agent_charger_numbers)]
+        return pos == self.charger_locations[charger_idx]
 
     def _compute_optimal_steps(self):
         positions = self._agent_positions()
@@ -185,7 +194,8 @@ class WarehouseWrapper(Wrapper):
             # Target depends on mission state
             mission = self.mission_state[i] if i < len(self.mission_state) else SEEK_SHELF
             if mission == CHARGING:
-                target = self.charger_location
+                charger_idx = self.agent_charger_numbers[i] if i < len(self.agent_charger_numbers) else 0
+                target = self.charger_locations[charger_idx]
             elif carrying > 0.5:
                 target = goal
             else:
@@ -201,6 +211,7 @@ class WarehouseWrapper(Wrapper):
                 dx, dy,
                 *facing,
                 carrying, battery / self.max_battery,
+                i / max(self.n_agents - 1, 1),  # agent id normalised 0..1
             ], dtype=np.float32)
             return np.concatenate([single_obs.astype(np.float32), extra])
 
@@ -214,14 +225,34 @@ class WarehouseWrapper(Wrapper):
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
+
+        # Auto-compute charger positions from grid corners (one per agent)
+        if self._auto_charger_positions:
+            gh, gw = self.env.unwrapped.grid_size
+            self.charger_locations = [
+                (0, 0),        # Charger 0: top-left corner  (agent 0)
+                (gw - 1, 0),   # Charger 1: top-right corner (agent 1)
+            ]
+            self.agent_charger_numbers = [i % len(self.charger_locations) for i in range(self.n_agents)]
+
+        # Place each agent one step inside from its assigned charger at episode start
+        for i, agent in enumerate(self.env.unwrapped.agents):
+            charger = self.charger_locations[self.agent_charger_numbers[i]]
+            cx, cy = charger
+            agent.x = cx + 1 if cx == 0 else cx - 1
+            agent.y = cy
+        self.env.unwrapped._recalc_grid()
+
         self.battery_levels = [self.max_battery] * self.n_agents
         self.deliveries_count = 0
+        self.agent_deliveries = [0] * self.n_agents
         self.charging_events = 0
         self.total_steps = 0
         self.segment_steps = 0
         self.mission_state = [SEEK_SHELF] * self.n_agents
         self.prev_potential = [None] * self.n_agents
         self.delivery_segment_steps = []
+        self.agent_shelf_claim = [None] * self.n_agents  # exclusive shelf target per agent
 
         # Store original shelf positions so we can return shelves after delivery
         self._shelf_home = {}
@@ -240,20 +271,35 @@ class WarehouseWrapper(Wrapper):
     # Target and potential (same as main branch)
     # ------------------------------------------------------------------
 
+    def _assign_shelf(self, i, pos, shelves):
+        """Assign the nearest unclaimed shelf to agent i.
+        If all shelves are claimed, fall back to nearest overall."""
+        claimed = {self.agent_shelf_claim[j] for j in range(self.n_agents) if j != i and self.agent_shelf_claim[j] is not None}
+        free = [s for s in shelves if s not in claimed]
+        pool = free if free else shelves
+        best = min(pool, key=lambda s: self._manhattan(pos, s))
+        self.agent_shelf_claim[i] = best
+        return best
+
     def _get_target(self, i, pos, carrying, battery):
         """Determine what the agent should be navigating toward."""
         goals = self._goal_positions()
         shelves = self._requested_shelves()
 
         if self.mission_state[i] == CHARGING:
-            return self.charger_location
+            charger_idx = self.agent_charger_numbers[i]
+            return self.charger_locations[charger_idx]
         elif carrying:
             if goals:
                 return min(goals, key=lambda g: self._manhattan(pos, g))
             return pos
         else:
             if shelves:
-                return min(shelves, key=lambda s: self._manhattan(pos, s))
+                # Use existing claim if still valid, else assign a new one
+                claim = self.agent_shelf_claim[i]
+                if claim is None or claim not in shelves:
+                    claim = self._assign_shelf(i, pos, shelves)
+                return claim
             return pos
 
     def _potential(self, pos, target):
@@ -294,19 +340,20 @@ class WarehouseWrapper(Wrapper):
         # ---- Detect RWARE delivery (env_r > 0) ----
         env_r = sum(reward) if isinstance(reward, (list, tuple)) else reward
 
-        # After RWAVE delivery: return delivered shelf to its home position
-        # so it doesn't block the goal for future deliveries.
-        # Use pre-step shelf reference since RWARE already cleared carrying_shelf.
+        # After RWARE delivery: return ONLY the delivered agent's shelf to its home
+        # position. Use the actual post-step carrying state (RWARE already cleared
+        # carrying_shelf for the delivering agent) so other agents keep their shelves.
         if env_r > 0:
             for i in range(self.n_agents):
-                shelf = was_carrying_shelf[i]
-                if shelf is not None:
-                    home = self._shelf_home.get(shelf.id, None)
-                    if home is not None:
-                        shelf.x, shelf.y = home
-                self.env.unwrapped.agents[i].carrying_shelf = None
+                # Agent actually delivered: was carrying, now not carrying (RWARE cleared it)
+                if was_carrying[i] and not now_carrying[i]:
+                    shelf = was_carrying_shelf[i]
+                    if shelf is not None:
+                        home = self._shelf_home.get(shelf.id, None)
+                        if home is not None:
+                            shelf.x, shelf.y = home
             self.env.unwrapped._recalc_grid()
-            now_carrying = [False] * self.n_agents
+            # now_carrying reflects RWARE's real state — do NOT override it
 
         # ---- Reset potential when carrying state changes (target switches) ----
         for i in range(self.n_agents):
@@ -314,13 +361,15 @@ class WarehouseWrapper(Wrapper):
                 self.prev_potential[i] = None
 
         # ---- Reward (main branch logic) ----
-        r = -0.5  # constant step penalty
+        r = 0.0
 
         for i in range(self.n_agents):
             act = action[i] if hasattr(action, "__iter__") else action
             p = pos[i]
             battery = self.battery_levels[i]
             carrying = now_carrying[i]
+
+            r -= 0.5  # per-agent step penalty (each agent contributes independently)
 
             # 1) Potential-based distance shaping (from main branch)
             target = self._get_target(i, p, carrying, battery)
@@ -347,7 +396,7 @@ class WarehouseWrapper(Wrapper):
 
         # ---- Battery drain/charge ----
         for i in range(self.n_agents):
-            if self._is_at_charger(pos[i]):
+            if self._is_at_charger(pos[i], i):
                 self.battery_levels[i] = min(
                     self.max_battery,
                     self.battery_levels[i] + self.charge_rate
@@ -367,10 +416,11 @@ class WarehouseWrapper(Wrapper):
                     and not now_carrying[i]):
                 self.mission_state[i] = CHARGING
                 self.prev_potential[i] = None  # reset shaping toward charger
+                self.agent_shelf_claim[i] = None  # release claim while charging
 
             # At charger while CHARGING
             if self.mission_state[i] == CHARGING:
-                if self._is_at_charger(pos[i]):
+                if self._is_at_charger(pos[i], i):
                     r += 5.0  # reward for being at charger when needed
                     if battery >= self.battery_resume:
                         self.mission_state[i] = SEEK_SHELF
@@ -384,6 +434,7 @@ class WarehouseWrapper(Wrapper):
                     and not was_carrying[i] and now_carrying[i]):
                 r += 20.0
                 self.mission_state[i] = DELIVER
+                self.agent_shelf_claim[i] = None  # release claim on pickup
 
             # Wrong drop (dropped shelf off-goal)
             if self.mission_state[i] == DELIVER and was_carrying[i] and not now_carrying[i]:
@@ -394,21 +445,24 @@ class WarehouseWrapper(Wrapper):
 
         # ---- Delivery milestone ----
         if env_r > 0:
-            self.deliveries_count += 1
+            # Track which agent(s) actually delivered this step
+            for i in range(self.n_agents):
+                if was_carrying[i] and not now_carrying[i]:
+                    self.agent_deliveries[i] += 1
+                    self.deliveries_count += 1
+                    self.agent_shelf_claim[i] = None  # ensure claim cleared after delivery
+                    self.mission_state[i] = SEEK_SHELF
+                    self.prev_potential[i] = None
             r += 50.0
 
             # Track segment steps
             self.delivery_segment_steps.append(self.segment_steps)
             self.segment_steps = 0
 
-            # Reset mission state for next delivery
-            for i in range(self.n_agents):
-                self.mission_state[i] = SEEK_SHELF
-                self.prev_potential[i] = None
-
         # ---- Termination ----
         battery_dead = any(b <= 0 for b in self.battery_levels)
-        mission_done = self.deliveries_count >= self.max_deliveries
+        # Episode ends when every agent has completed its own max_deliveries quota
+        mission_done = all(self.agent_deliveries[i] >= self.max_deliveries for i in range(self.n_agents))
 
         if battery_dead:
             terminated = True
@@ -424,6 +478,7 @@ class WarehouseWrapper(Wrapper):
         info.update({
             "battery_levels": self.battery_levels.copy(),
             "deliveries": self.deliveries_count,
+            "agent_deliveries": self.agent_deliveries.copy(),
             "max_deliveries": self.max_deliveries,
             "mission_complete": mission_done,
             "battery_dead": battery_dead,
@@ -437,14 +492,15 @@ class WarehouseWrapper(Wrapper):
 
 def make_env(env_config, battery_config=None):
     """Create RWARE environment with wrapper."""
+    n_agents = env_config.get("n_agents", 1)
     env = Warehouse(
         shelf_columns=env_config.get("shelf_columns", 3),
         column_height=env_config.get("column_height", 1),
         shelf_rows=env_config.get("shelf_rows", 1),
-        n_agents=env_config.get("n_agents", 1),
+        n_agents=n_agents,
         msg_bits=0,
         sensor_range=1,
-        request_queue_size=1,
+        request_queue_size=max(n_agents, 2),
         max_inactivity_steps=None,
         max_steps=env_config.get("max_steps", 100),
         reward_type=RewardType.INDIVIDUAL,
