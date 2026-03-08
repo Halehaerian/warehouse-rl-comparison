@@ -21,7 +21,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "1"
 from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
-from agents.sac import SACAgent
+from agents.sac.sac import SACAgent
 from configs.config import ENV_CONFIG, ENV_PRESETS, BATTERY_CONFIG, ALGO_CONFIGS
 
 # Import pyglet for graphical rendering
@@ -37,7 +37,7 @@ except ImportError:
 class BatteryRenderer:
     """
     Custom RWARE renderer with battery visualization.
-    
+
     Shows:
     - Battery bar at top with percentage
     - Yellow charger station with lightning bolt
@@ -45,26 +45,26 @@ class BatteryRenderer:
     - Shelves (dark blue = regular, teal = requested)
     - Goals (dark gray)
     """
-    
+
     def __init__(self, env, charger_location=(0, 0)):
         self.env = env.unwrapped
         self.charger_location = charger_location
-        
+
         self.rows, self.cols = self.env.grid_size
         self.grid_size = 30
         self.icon_size = 20
-        
+
         # Window dimensions with extra space for battery bar
         self.width = 1 + self.cols * (self.grid_size + 1)
         self.height = 2 + self.rows * (self.grid_size + 1) + 60
-        
+
         self.window = pyglet.window.Window(
             width=self.width,
             height=self.height,
             caption="RWARE + Battery Visualization"
         )
         self.window.on_close = self._on_close
-        
+
         # State
         self.battery_level = 100.0
         self.step_count = 0
@@ -72,7 +72,7 @@ class BatteryRenderer:
         self.pickups = 0
         self.is_carrying = False
         self.closed = False
-        
+
         # Colors
         self._BACKGROUND = (255, 255, 255)
         self._GRID = (200, 200, 200)
@@ -86,10 +86,10 @@ class BatteryRenderer:
         self._BATTERY_GOOD = (0, 200, 0)
         self._BATTERY_MED = (255, 200, 0)
         self._BATTERY_LOW = (255, 0, 0)
-    
+
     def _on_close(self):
         self.closed = True
-    
+
     def _draw_grid(self):
         glColor3ub(*self._GRID)
         glBegin(GL_LINES)
@@ -102,12 +102,12 @@ class BatteryRenderer:
             glVertex2f(x, 60)
             glVertex2f(x, self.height)
         glEnd()
-    
+
     def _draw_rect(self, x, y, color, padding=2):
         px = x * (self.grid_size + 1) + padding
         py = y * (self.grid_size + 1) + padding + 60
         size = self.grid_size - 2 * padding
-        
+
         glColor3ub(*color)
         glBegin(GL_QUADS)
         glVertex2f(px, py)
@@ -115,13 +115,13 @@ class BatteryRenderer:
         glVertex2f(px + size, py + size)
         glVertex2f(px, py + size)
         glEnd()
-    
+
     def _draw_charger(self):
         x, y = self.charger_location
         px = x * (self.grid_size + 1)
         py = y * (self.grid_size + 1) + 60
         size = self.grid_size
-        
+
         # Yellow background
         glColor3ub(*self._CHARGER)
         glBegin(GL_QUADS)
@@ -130,7 +130,7 @@ class BatteryRenderer:
         glVertex2f(px + size - 2, py + size - 2)
         glVertex2f(px + 2, py + size - 2)
         glEnd()
-        
+
         # Lightning bolt
         glColor3ub(0, 0, 0)
         glLineWidth(2.0)
@@ -146,26 +146,26 @@ class BatteryRenderer:
         glVertex2f(cx + 2, cy + 10)
         glEnd()
         glLineWidth(1.0)
-    
+
     def _draw_shelves(self):
         requested = set()
         if hasattr(self.env, 'request_queue'):
             requested = {(s.x, s.y) for s in self.env.request_queue}
-        
+
         for shelf in self.env.shelfs:
             if (shelf.x, shelf.y) in requested:
                 self._draw_rect(shelf.x, shelf.y, self._SHELF_REQ, padding=3)
             else:
-                self._draw_rect(shelf.x, shelf.y, self._SHELF, padding=4)
-    
+                self._draw_rect(shelf.x, shelf.y, self._SHELF, padding=4) 
+
     def _draw_goals(self):
         for gx, gy in self.env.goals:
             self._draw_rect(gx, gy, self._GOAL, padding=1)
-    
+
     def _draw_agents(self):
         for agent in self.env.agents:
             color = self._AGENT_LOADED if agent.carrying_shelf else self._AGENT
-            
+
             px = agent.x * (self.grid_size + 1)
             py = agent.y * (self.grid_size + 1) + 60
             size = self.grid_size
@@ -350,7 +350,6 @@ def visualize(args):
     state = np.array(obs[0]) if isinstance(obs, tuple) else np.array(obs)
     obs_size = state.shape[0]
     n_actions = env.action_space.spaces[0].n if hasattr(env.action_space, "spaces") else env.action_space.n
-
     agent = AGENT_CLASSES[algo](obs_size, n_actions, device, ALGO_CONFIGS[algo])
     agent.load(str(model_path))
     print("Model loaded\n")

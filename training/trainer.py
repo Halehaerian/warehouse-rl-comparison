@@ -10,7 +10,7 @@ from pathlib import Path
 from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
-from agents.sac import SACAgent
+from agents.sac.sac import SACAgent
 from utils.metrics import MetricsCollector
 
 warnings.filterwarnings("ignore")
@@ -141,6 +141,9 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
         while not done:
             action = agent.select_action(state, training=True)
+            if algo == "sac":
+               action_set = action
+               action = np.argmax(action_set.numpy())
             next_obs, reward, terminated, truncated, info = env.step(_wrap_action(env, action))
             done = terminated or truncated
             reward = _scalar_reward(reward)

@@ -126,6 +126,11 @@ PPO_CONFIG = {
 # --- SAC (discrete, auto-entropy tuning) ---
 SAC_CONFIG = {
     "lr": 3e-4,
+    "alpha": 3e-4,
+    "reward_scale": 2,
+    "n_actions" : 1,
+    "layer1_size": 256,
+    "layer2_size": 256,
     "gamma": 0.99,
     "tau": 0.005,
     "batch_size": 128,
