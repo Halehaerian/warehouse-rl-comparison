@@ -1,6 +1,8 @@
 #Coding derived from Phil Tabor's Youtube video - https://www.youtube.com/watch?v=ioidsRlf79o
 
 import numpy as np
+import torch.nn.functional as F
+import torch as T
 
 class ReplayBuffer():
     def __init__(self, max_size, input_shape, n_actions):
@@ -16,7 +18,8 @@ class ReplayBuffer():
         index = self.mem_cntr % self.mem_size
         self.state_memory[index] = np.array(state)
         self.new_state_memory[index] = np.array(state_)
-        self.action_memory[index] = np.array(action)
+        action_one_hot = F.one_hot(T.tensor([action]), num_classes=5)
+        self.action_memory[index] = np.array(action_one_hot)
         self.reward_memory[index] = np.array(reward)
         self.terminal_memory[index] = done
 
