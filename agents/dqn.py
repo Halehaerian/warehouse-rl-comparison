@@ -36,7 +36,8 @@ class DQNAgent(BaseAgent):
         self.epsilon_min = config.get("epsilon_min", 0.01)
         self.epsilon_decay = config.get("epsilon_decay", 0.9995)
         self.batch_size = config.get("batch_size", 64)
-        self.target_update_freq = config.get("target_update_freq", 100)
+        self.tau = config.get("tau", 0.005)
+        self.double = config.get("double", True)
 
         self.q = QNetwork(obs_size, n_actions, hidden).to(device)
         self.q_target = QNetwork(obs_size, n_actions, hidden).to(device)
@@ -72,21 +73,25 @@ class DQNAgent(BaseAgent):
 
         q_vals = self.q(s)[torch.arange(len(a)), a]
         with torch.no_grad():
-            # Double DQN: online network selects best action, target evaluates
-            # Reduces overestimation bias vs standard DQN
-            best_actions = self.q(s2).argmax(1)
-            q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
+            if self.double:
+                # Double DQN: online selects best action, target evaluates
+                best_actions = self.q(s2).argmax(1)
+                q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
+            else:
+                # Vanilla DQN: target network selects and evaluates (max Q)
+                q_next = self.q_target(s2).max(1).values
             target = r + self.gamma * q_next * (1 - d)
 
-        loss = nn.MSELoss()(q_vals, target)  # squared error as per course formula
+        loss = nn.SmoothL1Loss()(q_vals, target)  # Huber loss: robust to outlier rewards
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.q.parameters(), max_norm=10.0)
         self.optimizer.step()
 
         self.steps += 1
-        if self.steps % self.target_update_freq == 0:
-            self.q_target.load_state_dict(self.q.state_dict())
+        # Soft (Polyak) target update every step
+        for p, p_targ in zip(self.q.parameters(), self.q_target.parameters()):
+            p_targ.data.mul_(1 - self.tau).add_(self.tau * p.data)
 
         return {"loss": loss.item()}
 
