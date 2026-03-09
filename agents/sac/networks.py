@@ -5,7 +5,6 @@ import torch as T
 import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
-from torch .distributions.normal import Normal
 import numpy as np
 
 class CriticNetwork(nn.Module):
@@ -20,7 +19,7 @@ class CriticNetwork(nn.Module):
 
         self.criticNN = nn.Sequential(nn.Linear(self.input_dims+self.n_actions, self.fc1_dims), nn.ReLU(),
                                       nn.Linear(self.fc1_dims, self.fc2_dims), nn.ReLU(),
-                                      nn.Linear(self.fc2_dims, 1))
+                                      nn.Linear(self.fc2_dims, self.n_actions))
 
         self.optimizer = optim.Adam(self.parameters(), lr = beta)
 
@@ -68,8 +67,7 @@ class ActorNetwork(nn.Module):
 
     def sample(self, state):
         actor_out = self(state)
-        action = F.gumbel_softmax(actor_out, tau=1.0, hard=True, dim=-1)
-        log_probs = F.log_softmax(actor_out, dim=1)
-        log_probs_sel = action.detach() * log_probs
-        return action, log_probs_sel.sum(dim=-1, keepdim=True)
+        probs = F.softmax(actor_out, dim=-1)
+        log_probs = F.log_softmax(actor_out, dim=-1)
+        return actor_out, probs, log_probs
 
