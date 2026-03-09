@@ -16,8 +16,8 @@ from utils.metrics import MetricsCollector
 warnings.filterwarnings("ignore")
 
 AGENT_CLASSES = {
+    "ddqn": DQNAgent,
     "dqn": DQNAgent,
-    "vanilla_dqn": DQNAgent,
     "ppo": PPOAgent,
     "sac": SACAgent,
 }
@@ -62,7 +62,7 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     Train an agent.
 
     Args:
-        algo: "dqn", "ppo", or "sac"
+        algo: "ddqn", "dqn", "ppo", or "sac"
         env_config: environment settings dict
         battery_config: battery settings dict
         algo_config: algorithm hyperparameters dict

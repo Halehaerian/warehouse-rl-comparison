@@ -43,8 +43,8 @@ def plot_curves(metrics_dir: Path, savedir: Path, window: int = 200):
         print(f"No *_metrics.json in {metrics_dir}")
         return
 
-    algo_styles = {"dqn": "C0", "ppo": "C1", "sac": "C2"}
-    algo_names = {"dqn": "DQN", "ppo": "PPO", "sac": "SAC"}
+    algo_styles = {"ddqn": "C0", "dqn": "C3", "ppo": "C1", "sac": "C2"}
+    algo_names = {"ddqn": "DDQN", "dqn": "DQN", "ppo": "PPO", "sac": "SAC"}
 
     # --- Reward ---
     plt.figure(figsize=(8, 5))
