@@ -88,33 +88,33 @@ BATTERY_CONFIG = {
     "charger_location": (0, 0),
 }
 
-# --- DQN (Double DQN with tuned exploration) ---
+# --- DDQN (Double DQN with tuned exploration) ---
+DDQN_CONFIG = {
+    "lr": 5e-4,
+    "gamma": 0.99,
+    "epsilon_start": 1.0,
+    "epsilon_min": 0.01,
+    "epsilon_decay": 0.9990,
+    "batch_size": 128,
+    "memory_size": 100000,
+    "hidden_size": 256,
+    "tau": 0.005,
+    "double": True,
+    "warmup": 500,
+}
+
+# --- DQN (standard DQN, no Double DQN) ---
 DQN_CONFIG = {
     "lr": 5e-4,
     "gamma": 0.99,
     "epsilon_start": 1.0,
     "epsilon_min": 0.01,
-    "epsilon_decay": 0.9990,      
-    "batch_size": 128,
-    "memory_size": 100000,
-    "hidden_size": 256,
-    "tau": 0.005,               
-    "double": True,             
-    "warmup": 500,
-}
-
-# --- Vanilla DQN (standard DQN, no Double DQN) ---
-VANILLA_DQN_CONFIG = {
-    "lr": 5e-4,
-    "gamma": 0.99,
-    "epsilon_start": 1.0,
-    "epsilon_min": 0.01,
-    "epsilon_decay": 0.9990,      
+    "epsilon_decay": 0.9990,
     "batch_size": 128,
     "memory_size": 100000,
     "hidden_size": 256,
     "tau": 0.005,
-    "double": False,            # Vanilla DQN
+    "double": False,
     "warmup": 500,
 }
 
@@ -122,20 +122,22 @@ VANILLA_DQN_CONFIG = {
 PPO_CONFIG = {
     "lr": 3e-4,
     "lr_min": 1e-5,
-    "lr_decay": 0.9999,
+    "lr_decay": 0.99998,
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_eps": 0.2,
-    "value_clip": 0,          # disabled: was causing critic lag in high-variance reward env
-    "ppo_epochs": 8,          # reduced from 10: larger rollouts need fewer epochs to avoid overfitting
+    "value_clip": 0,
+    "ppo_epochs": 6,          # epochs per multi-episode rollout
     "batch_size": 128,
-    "rollout_len": 1024,      # increased from 512: ~2 episodes per update, lower gradient variance
+    "rollout_len": 2048,      # standard PPO: accumulate ~4-20 episodes, then update
     "hidden_size": 256,
     "n_layers": 2,
     "use_layer_norm": True,
     "vf_coef": 0.5,
-    "ent_coef": 0.01,         # constant entropy bonus (standard PPO)
-    "reward_scale": 0.02,     # raised from 0.01 -- stronger delivery signal
+    "ent_coef": 0.05,         # start high for exploration, decays to ent_coef_min
+    "ent_coef_min": 0.005,    # minimum entropy for late-stage exploitation
+    "ent_coef_decay": 0.9995, # ~0.005 by ep 4600
+    "reward_scale": 0.1,      # moderate scale: keeps value targets in range ~0-50
     "max_grad_norm": 0.5,
 }
 
@@ -160,8 +162,8 @@ TRAINING_CONFIG = {
 
 # Helper to get algorithm config by name
 ALGO_CONFIGS = {
+    "ddqn": DDQN_CONFIG,
     "dqn": DQN_CONFIG,
-    "vanilla_dqn": VANILLA_DQN_CONFIG,
     "ppo": PPO_CONFIG,
     "sac": SAC_CONFIG,
 }

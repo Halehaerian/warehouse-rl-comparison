@@ -77,17 +77,19 @@ class PPOAgent(BaseAgent):
         self.gamma = config.get("gamma", 0.99)
         self.gae_lambda = config.get("gae_lambda", 0.95)
         self.clip_eps = config.get("clip_eps", 0.2)
-        self.value_clip = config.get("value_clip", 0.2)  # PPO2-style value clipping
-        self.epochs = config.get("ppo_epochs", 10)
-        self.batch_size = config.get("batch_size", 64)
-        self.rollout_len = config.get("rollout_len", 2048)
-        self.vf_coef = config.get("vf_coef", 0.25)
-        self.ent_coef = config.get("ent_coef", 0.02)
-        self.reward_scale = config.get("reward_scale", 0.01)  # scale down large env rewards
+        self.value_clip = config.get("value_clip", 0)
+        self.epochs = config.get("ppo_epochs", 4)
+        self.batch_size = config.get("batch_size", 128)
+        self.rollout_len = config.get("rollout_len", 256)
+        self.vf_coef = config.get("vf_coef", 0.5)
+        self.ent_coef = config.get("ent_coef", 0.05)
+        self.ent_coef_min = config.get("ent_coef_min", 0.005)
+        self.ent_coef_decay = config.get("ent_coef_decay", 0.9995)
+        self.reward_scale = config.get("reward_scale", 0.1)
         self.max_grad_norm = config.get("max_grad_norm", 0.5)
         self.lr = config.get("lr", 3e-4)
-        self.lr_min = config.get("lr_min", 1e-4)
-        self.lr_decay = config.get("lr_decay", 1.0)  # per update; 1.0 = no decay
+        self.lr_min = config.get("lr_min", 1e-5)
+        self.lr_decay = config.get("lr_decay", 0.99998)
 
         self.net = ActorCritic(
             obs_size, n_actions, hidden,
@@ -206,6 +208,9 @@ class PPOAgent(BaseAgent):
         if self.lr_decay < 1.0:
             for g in self.optimizer.param_groups:
                 g["lr"] = max(self.lr_min, g["lr"] * self.lr_decay)
+
+        # Entropy coefficient decay: explore early, exploit later
+        self.ent_coef = max(self.ent_coef_min, self.ent_coef * self.ent_coef_decay)
 
         self._reset_buffer()
         return {"loss": total_loss}

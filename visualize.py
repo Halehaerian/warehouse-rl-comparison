@@ -304,7 +304,7 @@ def find_latest_model(algo="dqn"):
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize trained agent")
     parser.add_argument("--algo", type=str, default="dqn",
-                        choices=["dqn", "ppo", "sac"],
+                        choices=["ddqn", "dqn", "ppo", "sac"],
                         help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
@@ -318,7 +318,7 @@ def parse_args():
     return parser.parse_args()
 
 
-AGENT_CLASSES = {"dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent}
+AGENT_CLASSES = {"ddqn": DQNAgent, "dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent}
 
 
 def visualize(args):
