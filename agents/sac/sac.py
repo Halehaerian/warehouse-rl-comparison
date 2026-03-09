@@ -4,7 +4,8 @@ import os
 import torch as T
 import torch.nn.functional as F
 import numpy as np
-
+import random
+from torch.distributions import Categorical
 from agents.sac.buffer import ReplayBuffer
 from agents.sac.networks import ActorNetwork, CriticNetwork, ValueNetwork
 from agents.base import BaseAgent
@@ -32,11 +33,17 @@ class SACAgent(BaseAgent):
     def select_action(self, observation, training=True):
         #state = T.Tensor([observation]).to(self.device)
         state = T.as_tensor([observation], dtype=T.float32, device=self.device)
-        with T.no_grad():
-           action,_ = self.actor.sample(state)
-           if not training:
-              action = np.argmax(action.numpy())
-        return action
+        action, probs,_ = self.actor.sample(state)
+        coin_toss = random.randint(0,1)
+        if coin_toss == 1:
+           action = F.gumbel_softmax(action, tau=1.0, hard=True, dim=-1)
+           with T.no_grad():
+                action = np.argmax(action)
+        else:
+           action_dist = Categorical(probs)
+           action = action_dist.sample().squeeze(0)
+
+        return action.item()
 
     def update_network_parameters(self, tau=None):
         if tau is None:
@@ -72,28 +79,27 @@ class SACAgent(BaseAgent):
         value_[done] = 0.0
 
         # Training the Value network
-        actions,log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1.forward(state, actions)
-        q2_new_policy = self.critic_2.forward(state, actions)
+        actions, probs,log_probs = self.actor.sample(state)
+        q1_new_policy = self.critic_1(state, actions)
+        q2_new_policy = self.critic_2(state, actions)
         critic_value = T.min(q1_new_policy, q2_new_policy)
-        critic_value = critic_value.view(-1)
 
         self.value.optimizer.zero_grad()
-        value_target = critic_value - log_probs.squeeze()
+        value_target = probs*(critic_value - log_probs.squeeze())
+        value_target = value_target.sum(dim=1, keepdim=True).squeeze(1)
         value_loss = 0.5 * F.mse_loss(value, value_target)
         value_loss.backward(retain_graph=True)
         self.value.optimizer.step()
 
         # Training the Actor network
-        actions, log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1.forward(state, actions)
-        q2_new_policy = self.critic_2.forward(state, actions)
+        actions, probs, log_probs = self.actor.sample(state)
+        q1_new_policy = self.critic_1(state, actions)
+        q2_new_policy = self.critic_2(state, actions)
         critic_value = T.min(q1_new_policy, q2_new_policy)
-        critic_value = critic_value.view(-1)
 
         self.actor.optimizer.zero_grad()
         actor_loss = log_probs.squeeze() - critic_value
-        actor_loss = T.mean(actor_loss)
+        actor_loss = T.mean(probs * actor_loss)
         actor_loss.backward(retain_graph = True)
         self.actor.optimizer.step()
 
@@ -101,8 +107,8 @@ class SACAgent(BaseAgent):
         self.critic_1.optimizer.zero_grad()
         self.critic_2.optimizer.zero_grad()
         q_hat = reward + self.gamma*value_
-        q1_old_policy = self.critic_1.forward(state, action).view(-1)
-        q2_old_policy = self.critic_2.forward(state, action).view(-1)
+        q1_old_policy = (self.critic_1(state, action)*action).sum(dim=1, keepdim=True).squeeze(1)
+        q2_old_policy = (self.critic_2(state, action)*action).sum(dim=1, keepdim=True).squeeze(1)
         critic_1_loss = 0.5*F.mse_loss(q1_old_policy, q_hat)
         critic_2_loss = 0.5*F.mse_loss(q2_old_policy, q_hat)
 
