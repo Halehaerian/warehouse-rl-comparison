@@ -99,6 +99,8 @@ class PPOAgent(BaseAgent):
             lr=self.lr,
             eps=1e-5,
         )
+        self._last_log_prob = 0.0
+        self._last_value = 0.0
         self._reset_buffer()
 
     def _reset_buffer(self):
@@ -212,7 +214,16 @@ class PPOAgent(BaseAgent):
         pass
 
     def state_dict(self):
-        return {"net": self.net.state_dict()}
+        return {
+            "net": self.net.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "lr": self.optimizer.param_groups[0]["lr"],
+        }
 
     def load_state_dict(self, data):
         self.net.load_state_dict(data["net"])
+        if "optimizer" in data:
+            self.optimizer.load_state_dict(data["optimizer"])
+        if "lr" in data:
+            for g in self.optimizer.param_groups:
+                g["lr"] = data["lr"]

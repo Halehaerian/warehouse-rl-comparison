@@ -3,43 +3,60 @@ Configuration for warehouse RL comparison.
 
 All algorithm-specific hyperparameters live here.
 Battery config is kept separate for future expansion.
+
+Square grid sizes available in RWARE:
+  - 10x10: shelf_columns=3, column_height=1, shelf_rows=4 => 22 shelves
+  - 16x16: shelf_columns=5, column_height=1, shelf_rows=7 => 68 shelves
+  - 22x22: shelf_columns=7, column_height=1, shelf_rows=10 => 138 shelves
 """
 
 # --- Environment ---
-# 5 deliveries, optimal ~77 steps. max_steps=300 gives margin for charging.
+
+# Default: 10x10 square grid, 22 shelves (good for training & demo)
 ENV_CONFIG = {
-    "max_steps": 300,
+    "max_steps": 500,
     "max_deliveries": 5,
     "shelf_columns": 3,
     "column_height": 1,
-    "shelf_rows": 1,
+    "shelf_rows": 4,
     "n_agents": 1,
 }
 
-# Proposal: start with small grid (5x5) then scale (see Section 4).
-ENV_CONFIG_5x5 = {
-    "max_steps": 300,
+# Small: same as default (10x10 is the smallest square RWARE supports)
+ENV_CONFIG_SMALL = {
+    "max_steps": 500,
+    "max_deliveries": 5,
+    "shelf_columns": 3,
+    "column_height": 1,
+    "shelf_rows": 4,
+    "n_agents": 1,
+}
+
+# 10x10 square grid, 22 shelves
+ENV_CONFIG_10x10 = {
+    "max_steps": 500,
+    "max_deliveries": 5,
+    "shelf_columns": 3,
+    "column_height": 1,
+    "shelf_rows": 4,
+    "n_agents": 1,
+}
+
+# 16x16 square grid, 68 shelves (larger, needs more training)
+ENV_CONFIG_16x16 = {
+    "max_steps": 800,
     "max_deliveries": 5,
     "shelf_columns": 5,
-    "column_height": 1,
-    "shelf_rows": 5,
-    "n_agents": 1,
-}
-
-# Larger warehouses (more shelf columns/rows = bigger map).
-ENV_CONFIG_7x7 = {
-    "max_steps": 400,
-    "max_deliveries": 1,
-    "shelf_columns": 7,
     "column_height": 1,
     "shelf_rows": 7,
     "n_agents": 1,
 }
 
-ENV_CONFIG_10x10 = {
-    "max_steps": 600,
-    "max_deliveries": 1,
-    "shelf_columns": 10,
+# 22x22 square grid, 138 shelves (hardest)
+ENV_CONFIG_22x22 = {
+    "max_steps": 1200,
+    "max_deliveries": 5,
+    "shelf_columns": 7,
     "column_height": 1,
     "shelf_rows": 10,
     "n_agents": 1,
@@ -48,64 +65,65 @@ ENV_CONFIG_10x10 = {
 # Named env presets (used by train.py --env)
 ENV_PRESETS = {
     "default": ENV_CONFIG,
-    "5x5": ENV_CONFIG_5x5,
-    "7x7": ENV_CONFIG_7x7,
+    "small": ENV_CONFIG_SMALL,
     "10x10": ENV_CONFIG_10x10,
+    "16x16": ENV_CONFIG_16x16,
+    "22x22": ENV_CONFIG_22x22,
 }
 
 # --- Battery ---
-# drain=2.5 -> dies at step 40 without charging
-# Threshold=50 means battery hits 50 at step 20; with (battery < threshold) CHARGING starts on step 21
-# Even a fast 5-delivery run (~22 steps/delivery) must detour to charger
-# charge_rate=25 per step -> recharge 50->85 in 2 steps at charger
-# resume=85 gives ~14 more steps before next charge trigger
-# => Charging is a first-class quest waypoint, not an optional detour
-# Charger at (0,0)
+# 10x10 grid: max manhattan distance ~18
+# drain=1.0 -> dies at step 100 without charging
+# threshold=30: agent seeks charger at step ~70
+# charge_rate=25 per step -> fast recharge (3 steps from 5 to 80)
+# resume=80 gives ~50 more steps before next charge trigger
+# ~2 charge cycles per 5-delivery episode
+# Charger at (0,0) top-left corner
 BATTERY_CONFIG = {
     "max_battery": 100.0,
-    "battery_drain": 2.5,
+    "battery_drain": 1.0,
     "charge_rate": 25.0,
-    "battery_threshold": 50.0,
-    "battery_resume": 85.0,
+    "battery_threshold": 30.0,
+    "battery_resume": 80.0,
     "charger_location": (0, 0),
 }
 
-# --- DQN ---
+# --- DQN (Double DQN with tuned exploration) ---
 DQN_CONFIG = {
-    "lr": 1e-3,
+    "lr": 5e-4,
     "gamma": 0.99,
     "epsilon_start": 1.0,
-    "epsilon_min": 0.05,          # higher floor for more exploration (helps discover charging)
-    "epsilon_decay": 0.9997,      # slower decay: reaches ~0.05 around ep 11000
+    "epsilon_min": 0.01,
+    "epsilon_decay": 0.9990,      # reaches 0.01 ~ep 4600 (tuned for 10k)
     "batch_size": 128,
-    "memory_size": 200000,         # larger buffer for 5-delivery episodes (longer episodes)
+    "memory_size": 100000,
     "hidden_size": 256,
-    "target_update_freq": 100,
+    "target_update_freq": 200,
     "warmup": 500,
 }
 
-# --- PPO (tuned for warehouse: larger net, more exploration, LR decay) ---
+# --- PPO (tuned for 10x10 warehouse) ---
 PPO_CONFIG = {
     "lr": 3e-4,
-    "lr_min": 1e-4,
-    "lr_decay": 0.9998,
+    "lr_min": 1e-5,
+    "lr_decay": 0.9999,
     "gamma": 0.99,
-    "gae_lambda": 0.98,
+    "gae_lambda": 0.95,
     "clip_eps": 0.2,
-    "value_clip": 0.2,
+    "value_clip": 0.5,        # loosened from 0.2 -- value fn learns faster
     "ppo_epochs": 10,
     "batch_size": 128,
-    "rollout_len": 2048,
-    "hidden_size": 512,
-    "n_layers": 3,
+    "rollout_len": 1024,      # reduced from 2048 -- more updates, faster early learning
+    "hidden_size": 256,
+    "n_layers": 2,
     "use_layer_norm": True,
-    "vf_coef": 0.25,
-    "ent_coef": 0.025,
-    "reward_scale": 0.01,
+    "vf_coef": 0.5,
+    "ent_coef": 0.01,         # lowered: 0.05 caused random battery deaths (death=-1.0 = 1 delivery)
+    "reward_scale": 0.02,     # raised from 0.01 -- stronger delivery signal
     "max_grad_norm": 0.5,
 }
 
-# --- SAC ---
+# --- SAC (discrete, auto-entropy tuning) ---
 SAC_CONFIG = {
     "lr": 3e-4,
     "alpha": 3e-4,
@@ -119,7 +137,7 @@ SAC_CONFIG = {
 
 # --- Training ---
 TRAINING_CONFIG = {
-    "episodes": 15000,
+    "episodes": 10000,
     "eval_freq": 200,
     "save_freq": 1000,
 }
