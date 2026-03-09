@@ -17,6 +17,7 @@ warnings.filterwarnings("ignore")
 
 AGENT_CLASSES = {
     "dqn": DQNAgent,
+    "vanilla_dqn": DQNAgent,
     "ppo": PPOAgent,
     "sac": SACAgent,
 }
@@ -163,11 +164,6 @@ def train(algo, env_config, battery_config, algo_config, training_config,
             state = next_state
 
         agent.end_episode()
-
-        # PPO: flush remaining rollout only if substantial (avoid noisy micro-updates)
-        min_flush = min(getattr(agent, "rollout_len", 128), 512)
-        if algo == "ppo" and len(agent.buf_states) >= min_flush:
-            agent.update(next_state=state)
 
         metrics.log_episode(ep, ep_reward, env.total_steps, info,
                             epsilon=getattr(agent, "epsilon", None))
