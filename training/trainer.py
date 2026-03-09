@@ -149,10 +149,8 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
             # Algorithm-specific update
             if algo == "ppo":
-                # Pass terminated (not done) so truncated episodes still bootstrap future value
+                # Store transition; terminated (not done) so truncated episodes bootstrap
                 agent.store_transition(state, action, reward, terminated)
-                if agent.ready_to_update():
-                    agent.update(next_state=next_state)
             else:
                 # DQN and SAC: pass terminated (not done) so truncated episodes still bootstrap
                 agent.update(state, action, reward, next_state, terminated)
@@ -161,6 +159,10 @@ def train(algo, env_config, battery_config, algo_config, training_config,
             state = next_state
 
         agent.end_episode()
+
+        # PPO: update when buffer reaches rollout_len (accumulates across episodes)
+        if algo == "ppo" and agent.ready_to_update():
+            agent.update(next_state=state)
 
         metrics.log_episode(ep, ep_reward, env.total_steps, info,
                             epsilon=getattr(agent, "epsilon", None))

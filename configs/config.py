@@ -120,22 +120,24 @@ DQN_CONFIG = {
 
 # --- PPO (tuned for 10x10 warehouse) ---
 PPO_CONFIG = {
-    "lr": 5e-4,            # higher LR for faster learning
+    "lr": 3e-4,
     "lr_min": 1e-5,
-    "lr_decay": 1.0,       # no decay - constant LR
+    "lr_decay": 0.99998,
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_eps": 0.2,
     "value_clip": 0,
-    "ppo_epochs": 4,       # fewer epochs to avoid overfitting
-    "batch_size": 64,      # smaller batches = more gradient steps
-    "rollout_len": 256,    # < max_steps(500), updates ~2x per episode
+    "ppo_epochs": 6,          # epochs per multi-episode rollout
+    "batch_size": 128,
+    "rollout_len": 2048,      # standard PPO: accumulate ~4-20 episodes, then update
     "hidden_size": 256,
     "n_layers": 2,
     "use_layer_norm": True,
     "vf_coef": 0.5,
-    "ent_coef": 0.005,     # low entropy = more deterministic policy
-    "reward_scale": 0.01,  # smaller scaling = stronger gradients
+    "ent_coef": 0.05,         # start high for exploration, decays to ent_coef_min
+    "ent_coef_min": 0.005,    # minimum entropy for late-stage exploitation
+    "ent_coef_decay": 0.9995, # ~0.005 by ep 4600
+    "reward_scale": 0.1,      # moderate scale: keeps value targets in range ~0-50
     "max_grad_norm": 0.5,
 }
 
