@@ -141,9 +141,6 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
         while not done:
             action = agent.select_action(state, training=True)
-            if algo == "sac":
-               action_set = action
-               action = np.argmax(action_set.numpy())
             next_obs, reward, terminated, truncated, info = env.step(_wrap_action(env, action))
             done = terminated or truncated
             reward = _scalar_reward(reward)
