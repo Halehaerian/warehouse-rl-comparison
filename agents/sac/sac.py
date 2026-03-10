@@ -5,7 +5,7 @@ import torch as T
 import torch.nn.functional as F
 import numpy as np
 import random
-from torch.distributions import Categorical
+import torch.optim as optim
 from agents.sac.buffer import ReplayBuffer
 from agents.sac.networks import ActorNetwork, CriticNetwork, ValueNetwork
 from agents.base import BaseAgent
@@ -30,19 +30,24 @@ class SACAgent(BaseAgent):
 
         self.steps = 0
 
-    def select_action(self, observation, training=True):
-        #state = T.Tensor([observation]).to(self.device)
-        state = T.as_tensor([observation], dtype=T.float32, device=self.device)
-        action, probs,_ = self.actor.sample(state)
-        coin_toss = random.randint(0,1)
-        if coin_toss == 1:
-           action = F.gumbel_softmax(action, tau=1.0, hard=True, dim=-1)
-           with T.no_grad():
-                action = np.argmax(action)
-        else:
-           action_dist = Categorical(probs)
-           action = action_dist.sample().squeeze(0)
+        #Alpha Tuning
+        self.target_entropy = -np.log(1.0 / n_actions) * 0.5
+        self.log_alpha = T.zeros(1, requires_grad=True, device=self.device)
+        self.alpha_opt = optim.Adam([self.log_alpha], lr=config.get("lr", 3e-4))
 
+    @property
+    def alpha(self):
+        return self.log_alpha.exp()
+
+
+    def select_action(self, observation, training=True):
+        state = T.as_tensor([observation], dtype=T.float32, device=self.device)
+        if training:
+           action_dist, _ ,_ = self.actor.sample(state)
+           action = action_dist.sample().squeeze(0)
+        else:
+           actor_out = self.actor(state)
+           action = actor_out.argmax(1)
         return action.item()
 
     def update_network_parameters(self, tau=None):
@@ -79,29 +84,38 @@ class SACAgent(BaseAgent):
         value_[done] = 0.0
 
         # Training the Value network
-        actions, probs,log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1(state, actions)
-        q2_new_policy = self.critic_2(state, actions)
+        _, probs,log_probs = self.actor.sample(state)
+        q1_new_policy = self.critic_1(state, probs)
+        q2_new_policy = self.critic_2(state, probs)
         critic_value = T.min(q1_new_policy, q2_new_policy)
 
         self.value.optimizer.zero_grad()
-        value_target = probs*(critic_value - log_probs.squeeze())
+        value_target = probs*(critic_value - self.alpha.detach()*log_probs.squeeze())
         value_target = value_target.sum(dim=1, keepdim=True).squeeze(1)
         value_loss = 0.5 * F.mse_loss(value, value_target)
         value_loss.backward(retain_graph=True)
         self.value.optimizer.step()
 
         # Training the Actor network
-        actions, probs, log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1(state, actions)
-        q2_new_policy = self.critic_2(state, actions)
+        _, probs, log_probs = self.actor.sample(state)
+        q1_new_policy = self.critic_1(state, probs)
+        q2_new_policy = self.critic_2(state, probs)
         critic_value = T.min(q1_new_policy, q2_new_policy)
 
         self.actor.optimizer.zero_grad()
-        actor_loss = log_probs.squeeze() - critic_value
+        actor_loss = self.alpha.detach()*log_probs.squeeze() - critic_value
         actor_loss = T.mean(probs * actor_loss)
         actor_loss.backward(retain_graph = True)
         self.actor.optimizer.step()
+
+        # --- Alpha (entropy) update ---
+        entropy = -(probs.detach() * log_probs.detach()).sum(1)
+        alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
+
+        self.alpha_opt.zero_grad()
+        alpha_loss.backward()
+        self.alpha_opt.step()
+
 
         # Training Critic networks
         self.critic_1.optimizer.zero_grad()

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+from torch.distributions import Categorical
 
 class CriticNetwork(nn.Module):
     def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256):
@@ -69,5 +70,5 @@ class ActorNetwork(nn.Module):
         actor_out = self(state)
         probs = F.softmax(actor_out, dim=-1)
         log_probs = F.log_softmax(actor_out, dim=-1)
-        return actor_out, probs, log_probs
+        return Categorical(probs), probs, log_probs
 
