@@ -10,7 +10,7 @@ from pathlib import Path
 from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
-from agents.sac.sac import SACAgent
+from agents.sac.sac_original import SACAgent
 from utils.metrics import MetricsCollector
 
 warnings.filterwarnings("ignore")

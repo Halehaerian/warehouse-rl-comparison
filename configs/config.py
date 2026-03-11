@@ -141,16 +141,15 @@ PPO_CONFIG = {
     "max_grad_norm": 0.5,
 }
 
-# --- SAC (discrete, auto-entropy tuning) ---
+# --- SAC (discrete, auto-entropy tuning via sac_original) ---
 SAC_CONFIG = {
     "lr": 3e-4,
-    "alpha": 3e-4,
-    "layer1_size": 256,
-    "layer2_size": 256,
+    "hidden_size": 256,
     "gamma": 0.99,
     "tau": 0.005,
-    "batch_size": 256,
-    "memory_size": 1000000,
+    "batch_size": 128,
+    "memory_size": 100000,
+    "warmup": 500,
 }
 
 # --- Training ---
