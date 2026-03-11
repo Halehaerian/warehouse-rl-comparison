@@ -22,6 +22,7 @@ from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
 from agents.sac.sac import SACAgent
+from agents.sac.sac_original import SACAgent as SACOriginalAgent
 from configs.config import ENV_CONFIG, ENV_PRESETS, BATTERY_CONFIG, ALGO_CONFIGS
 
 # Import pyglet for graphical rendering
@@ -304,7 +305,7 @@ def find_latest_model(algo="dqn"):
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize trained agent")
     parser.add_argument("--algo", type=str, default="dqn",
-                        choices=["ddqn", "dqn", "ppo", "sac"],
+                        choices=["ddqn", "dqn", "ppo", "sac", "sac_original"],
                         help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
@@ -318,7 +319,7 @@ def parse_args():
     return parser.parse_args()
 
 
-AGENT_CLASSES = {"ddqn": DQNAgent, "dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent}
+AGENT_CLASSES = {"ddqn": DQNAgent, "dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent, "sac_original": SACOriginalAgent}
 
 
 def visualize(args):

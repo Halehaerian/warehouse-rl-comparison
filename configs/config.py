@@ -165,4 +165,5 @@ ALGO_CONFIGS = {
     "dqn": DQN_CONFIG,
     "ppo": PPO_CONFIG,
     "sac": SAC_CONFIG,
+    "sac_original": SAC_CONFIG,
 }
