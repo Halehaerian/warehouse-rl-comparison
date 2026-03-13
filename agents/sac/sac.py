@@ -1,5 +1,3 @@
-#Code adapted form Phil Tabor's Youtube video https://www.youtube.com/watch?v=ioidsRlf79o
-
 import os
 import torch as T
 import torch.nn.functional as F
@@ -31,7 +29,6 @@ class SACAgent(BaseAgent):
         self.steps = 0
 
     def select_action(self, observation, training=True):
-        #state = T.Tensor([observation]).to(self.device)
         state = T.as_tensor([observation], dtype=T.float32, device=self.device)
         action, probs,_ = self.actor.sample(state)
         coin_toss = random.randint(0,1)
@@ -78,7 +75,6 @@ class SACAgent(BaseAgent):
         value_ = self.target_value(state_).view(-1)
         value_[done] = 0.0
 
-        # Training the Value network
         actions, probs,log_probs = self.actor.sample(state)
         q1_new_policy = self.critic_1(state, actions)
         q2_new_policy = self.critic_2(state, actions)
@@ -91,7 +87,6 @@ class SACAgent(BaseAgent):
         value_loss.backward(retain_graph=True)
         self.value.optimizer.step()
 
-        # Training the Actor network
         actions, probs, log_probs = self.actor.sample(state)
         q1_new_policy = self.critic_1(state, actions)
         q2_new_policy = self.critic_2(state, actions)

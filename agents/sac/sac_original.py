@@ -1,5 +1,3 @@
-"""SAC Agent (Soft Actor-Critic) adapted for discrete action spaces."""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -68,7 +66,6 @@ class SACAgent(BaseAgent):
         self.memory_size = config.get("memory_size", 50000)
         self.warmup = config.get("warmup", 100)
 
-        # Networks
         self.actor = DiscreteActor(obs_size, n_actions, hidden).to(device)
         self.critic = TwinCritic(obs_size, n_actions, hidden).to(device)
         self.target_critic = TwinCritic(obs_size, n_actions, hidden).to(device)
@@ -76,10 +73,6 @@ class SACAgent(BaseAgent):
 
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=config.get("lr", 3e-4))
         self.critic_opt = optim.Adam(self.critic.parameters(), lr=config.get("lr", 3e-4))
-
-        # Auto-tune entropy
-        # 0.5 × log(|A|): allows policy to become decisive while retaining some exploration
-        # 0.98 × log(|A|) was too high — forced near-uniform policy, preventing convergence
         self.target_entropy = -np.log(1.0 / n_actions) * 0.5
         self.log_alpha = torch.zeros(1, requires_grad=True, device=device)
         self.alpha_opt = optim.Adam([self.log_alpha], lr=config.get("lr", 3e-4))
@@ -90,8 +83,6 @@ class SACAgent(BaseAgent):
     @property
     def alpha(self):
         return self.log_alpha.exp()
-
-    # ----- BaseAgent interface -----
 
     def select_action(self, state, training=True):
         t = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -117,7 +108,6 @@ class SACAgent(BaseAgent):
         ns = torch.FloatTensor(np.array([b[3] for b in batch])).to(self.device)
         d = torch.FloatTensor([b[4] for b in batch]).to(self.device)
 
-        # --- Critic update ---
         with torch.no_grad():
             next_probs = self.actor(ns)
             next_log_probs = torch.log(next_probs + 1e-8)
@@ -136,7 +126,6 @@ class SACAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=10.0)
         self.critic_opt.step()
 
-        # --- Actor update ---
         probs = self.actor(s)
         log_probs = torch.log(probs + 1e-8)
         with torch.no_grad():
@@ -150,7 +139,6 @@ class SACAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
         self.actor_opt.step()
 
-        # --- Alpha (entropy) update ---
         entropy = -(probs.detach() * log_probs.detach()).sum(1)
         alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
 
@@ -158,14 +146,13 @@ class SACAgent(BaseAgent):
         alpha_loss.backward()
         self.alpha_opt.step()
 
-        # --- Soft update target critic ---
         for tp, p in zip(self.target_critic.parameters(), self.critic.parameters()):
             tp.data.copy_(self.tau * p.data + (1 - self.tau) * tp.data)
 
         return {"critic_loss": critic_loss.item(), "actor_loss": actor_loss.item()}
 
     def end_episode(self):
-        pass  # SAC has no epsilon
+        pass
 
     def state_dict(self):
         return {

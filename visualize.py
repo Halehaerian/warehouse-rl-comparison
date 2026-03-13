@@ -1,15 +1,4 @@
-﻿"""
-Visualize trained agent in RWARE environment.
-
-Shows the agent in a graphical window with battery level bar,
-charger station, and real-time stats.
-
-Usage:
-    python visualize.py --algo dqn
-    python visualize.py --algo ppo --model models/ppo_best.pt
-"""
-
-import argparse
+﻿import argparse
 import numpy as np
 import torch
 import time
@@ -22,9 +11,9 @@ from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
 from agents.sac.sac import SACAgent
+from agents.sac.sac_original import SACAgent as SACOriginalAgent
 from configs.config import ENV_CONFIG, ENV_PRESETS, BATTERY_CONFIG, ALGO_CONFIGS
 
-# Import pyglet for graphical rendering
 try:
     import pyglet
     from pyglet.gl import *
@@ -35,17 +24,6 @@ except ImportError:
 
 
 class BatteryRenderer:
-    """
-    Custom RWARE renderer with battery visualization.
-
-    Shows:
-    - Battery bar at top with percentage
-    - Yellow charger station with lightning bolt
-    - Agent (orange/red based on carrying status)
-    - Shelves (dark blue = regular, teal = requested)
-    - Goals (dark gray)
-    """
-
     def __init__(self, env, charger_location=(0, 0)):
         self.env = env.unwrapped
         self.charger_location = charger_location
@@ -54,7 +32,6 @@ class BatteryRenderer:
         self.grid_size = 30
         self.icon_size = 20
 
-        # Window dimensions with extra space for battery bar
         self.width = 1 + self.cols * (self.grid_size + 1)
         self.height = 2 + self.rows * (self.grid_size + 1) + 60
 
@@ -65,7 +42,6 @@ class BatteryRenderer:
         )
         self.window.on_close = self._on_close
 
-        # State
         self.battery_level = 100.0
         self.step_count = 0
         self.deliveries = 0
@@ -73,7 +49,6 @@ class BatteryRenderer:
         self.is_carrying = False
         self.closed = False
 
-        # Colors
         self._BACKGROUND = (255, 255, 255)
         self._GRID = (200, 200, 200)
         self._SHELF = (72, 61, 139)
@@ -122,7 +97,6 @@ class BatteryRenderer:
         py = y * (self.grid_size + 1) + 60
         size = self.grid_size
 
-        # Yellow background
         glColor3ub(*self._CHARGER)
         glBegin(GL_QUADS)
         glVertex2f(px + 2, py + 2)
@@ -131,7 +105,6 @@ class BatteryRenderer:
         glVertex2f(px + 2, py + size - 2)
         glEnd()
 
-        # Lightning bolt
         glColor3ub(0, 0, 0)
         glLineWidth(2.0)
         cx = px + size // 2
@@ -170,7 +143,6 @@ class BatteryRenderer:
             py = agent.y * (self.grid_size + 1) + 60
             size = self.grid_size
             
-            # Draw agent as circle
             glColor3ub(*color)
             cx = px + size // 2
             cy = py + size // 2
@@ -183,7 +155,6 @@ class BatteryRenderer:
                 glVertex2f(cx + radius * np.cos(angle), cy + radius * np.sin(angle))
             glEnd()
             
-            # Direction indicator
             glColor3ub(0, 0, 0)
             glLineWidth(2.0)
             dir_offsets = {0: (0, 1), 1: (0, -1), 2: (-1, 0), 3: (1, 0)}
@@ -200,7 +171,6 @@ class BatteryRenderer:
         bar_width = self.width - 20
         bar_height = 25
         
-        # Background
         glColor3ub(*self._BATTERY_BG)
         glBegin(GL_QUADS)
         glVertex2f(bar_x, bar_y)
@@ -208,8 +178,7 @@ class BatteryRenderer:
         glVertex2f(bar_x + bar_width, bar_y + bar_height)
         glVertex2f(bar_x, bar_y + bar_height)
         glEnd()
-        
-        # Battery fill
+
         fill_width = (self.battery_level / 100.0) * (bar_width - 4)
         if self.battery_level > 50:
             color = self._BATTERY_GOOD
@@ -226,7 +195,6 @@ class BatteryRenderer:
         glVertex2f(bar_x + 2, bar_y + bar_height - 2)
         glEnd()
         
-        # Labels
         label = pyglet.text.Label(
             f"Battery: {self.battery_level:.1f}%  |  Step: {self.step_count}  |  "
             f"Pickups: {self.pickups}  |  Deliveries: {self.deliveries}",
@@ -291,7 +259,6 @@ def find_latest_model(algo="dqn"):
     models_dir = Path("models")
     models = list(models_dir.glob(f"{algo}*.pt"))
     if not models:
-        # Fallback: any .pt file
         models = list(models_dir.glob("*.pt"))
     if not models:
         return None
@@ -304,7 +271,7 @@ def find_latest_model(algo="dqn"):
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize trained agent")
     parser.add_argument("--algo", type=str, default="dqn",
-                        choices=["ddqn", "dqn", "ppo", "sac"],
+                        choices=["ddqn", "dqn", "ppo", "sac", "sac_original"],
                         help="Algorithm to visualize (default: dqn)")
     parser.add_argument("--model", type=str, default=None,
                         help="Path to model file (default: latest)")
@@ -318,7 +285,7 @@ def parse_args():
     return parser.parse_args()
 
 
-AGENT_CLASSES = {"ddqn": DQNAgent, "dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent}
+AGENT_CLASSES = {"ddqn": DQNAgent, "dqn": DQNAgent, "ppo": PPOAgent, "sac": SACAgent, "sac_original": SACOriginalAgent}
 
 
 def visualize(args):
@@ -339,12 +306,10 @@ def visualize(args):
     print(f"Visualizing {algo.upper()} | Model: {model_path}")
     print(f"{'='*60}")
 
-    # Create environment
     env = make_env(env_config, battery_config)
     charger = tuple(battery_config.get("charger_location", (0, 0)))
     renderer = BatteryRenderer(env, charger_location=charger)
 
-    # Create and load agent
     device = torch.device("cpu")
     obs, _ = env.reset()
     state = np.array(obs[0]) if isinstance(obs, tuple) else np.array(obs)
@@ -384,10 +349,10 @@ def visualize(args):
                 pickups += 1
                 total_pickups += 1
 
-            new_del = info.get("deliveries", 0)
-            if new_del > deliveries:
-                total_deliveries += new_del - deliveries
-                deliveries = new_del
+            current_deliveries = info.get("deliveries", 0)
+            if current_deliveries > deliveries:
+                total_deliveries += current_deliveries - deliveries
+                deliveries = current_deliveries
 
             battery = info.get("battery_levels", [100])[0]
             is_charging = (hasattr(env, "mission_state") and env.mission_state[0] == 2)
@@ -401,10 +366,10 @@ def visualize(args):
             if done:
                 break
 
-        mc = info.get("mission_complete", False)
-        bd = info.get("battery_dead", False)
+        mission_complete = info.get("mission_complete", False)
+        is_battery_dead = info.get("battery_dead", False)
         stuck = info.get("agent_stuck", False)
-        status = "SUCCESS" if mc else ("BATTERY DEAD" if bd else ("STUCK" if stuck else "TIMEOUT"))
+        status = "SUCCESS" if mission_complete else ("BATTERY DEAD" if is_battery_dead else ("STUCK" if stuck else "TIMEOUT"))
         print(f"  {status} | Steps: {steps} | Pickups: {pickups} | Deliveries: {deliveries}")
 
     print(f"\nTotal: {total_pickups} pickups, {total_deliveries} deliveries")

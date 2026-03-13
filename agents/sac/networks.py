@@ -1,5 +1,3 @@
-#Code adapted form Phil Tabor's Youtube video https://www.youtube.com/watch?v=ioidsRlf79o
-
 import os
 import torch as T
 import torch.nn.functional as F
@@ -9,8 +7,6 @@ import numpy as np
 
 class CriticNetwork(nn.Module):
     def __init__(self, beta, input_dims, n_actions, fc1_dims=256, fc2_dims=256):
-        # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output
-
         super(CriticNetwork, self).__init__()
         self.input_dims = input_dims
         self.fc1_dims = fc1_dims
@@ -29,8 +25,6 @@ class CriticNetwork(nn.Module):
 
 class ValueNetwork(nn.Module):
     def __init__(self, beta, input_dims, fc1_dims=256, fc2_dims=256):
-        # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output
-
         super(ValueNetwork, self).__init__()
         self.input_dims = input_dims
         self.fc1_dims = fc1_dims
@@ -48,8 +42,6 @@ class ValueNetwork(nn.Module):
 
 class ActorNetwork(nn.Module):
     def __init__(self, alpha, input_dims, n_actions, fc1_dims=256, fc2_dims=256):
-        # This neural network has input > fully connected layer 1 > ReLu Activation > fully connected layer 2 > ReLu Activation > output > Softmax
-
         super(ActorNetwork, self).__init__()
         self.input_dims = input_dims
         self.fc1_dims = fc1_dims
