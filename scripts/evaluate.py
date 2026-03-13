@@ -1,22 +1,3 @@
-"""Compute proposal metrics from training outputs.
-
-Metrics reported by this script:
-  - Success rate %          (mission_complete episodes)
-  - Battery death %         (battery_dead episodes)
-  - Episodes to 80% success (rolling window)
-  - Table 1 summary         (aggregated metrics written to CSV)
-
-Note:
-  Additional helper functions in this module compute other metrics
-  (e.g., deliveries per episode, routing efficiency, battery usage,
-  charging events) that may be used by downstream analysis code, but
-  they are not currently printed or exported by this CLI.
-Usage:
-    python scripts/evaluate.py
-    python scripts/evaluate.py --outputs outputs --window 200
-    python scripts/evaluate.py --outputs outputs --out-table results/table1.csv
-"""
-
 import argparse
 import json
 from collections import defaultdict
@@ -24,14 +5,12 @@ from pathlib import Path
 
 
 def load_metrics(path: Path) -> list:
-    """Load episode list from a metrics JSON file."""
     with open(path, "r") as f:
         data = json.load(f)
     return data if isinstance(data, list) else []
 
 
 def success_rate(episodes: list) -> float:
-    """Fraction of episodes where mission_complete is True."""
     if not episodes:
         return 0.0
     n = sum(1 for e in episodes if e.get("mission_complete", False))
@@ -39,7 +18,6 @@ def success_rate(episodes: list) -> float:
 
 
 def battery_death_rate(episodes: list) -> float:
-    """Fraction of episodes where battery_dead is True."""
     if not episodes:
         return 0.0
     n = sum(1 for e in episodes if e.get("battery_dead", False))
@@ -48,10 +26,6 @@ def battery_death_rate(episodes: list) -> float:
 
 def episodes_to_success_threshold(episodes: list, threshold: float = 0.80,
                                   window: int = 200) -> int | None:
-    """
-    First episode at which the rolling success rate (over last `window` episodes)
-    reaches or exceeds `threshold`. Returns None if never reached.
-    """
     if not episodes or window <= 0:
         return None
     for i in range(window - 1, len(episodes)):
@@ -75,21 +49,18 @@ def mean_steps(episodes: list) -> float:
 
 
 def _algo_base_name(path: Path) -> str:
-    """e.g. ppo_metrics_seed42.json -> ppo; ppo_metrics.json -> ppo."""
-    stem = path.stem  # e.g. ppo_metrics_seed42 or ppo_metrics
+    stem = path.stem  
     stem = stem.replace("_metrics", "")
     if "_seed" in stem:
         stem = stem.split("_seed")[0]
     return stem
 def avg_deliveries(episodes: list) -> float:
-    """Average number of deliveries per episode."""
     if not episodes:
         return 0.0
     return sum(e.get("deliveries", 0) for e in episodes) / len(episodes)
 
 
 def avg_steps_per_delivery(episodes: list) -> float:
-    """Average steps per completed delivery across all episodes."""
     total_steps = 0
     total_deliveries = 0
     for e in episodes:
@@ -103,7 +74,6 @@ def avg_steps_per_delivery(episodes: list) -> float:
 
 
 def battery_efficiency(episodes: list) -> float:
-    """Average battery remaining (%) at end of completed episodes."""
     completed = [e for e in episodes if e.get("mission_complete", False)]
     if not completed:
         return 0.0
@@ -111,18 +81,20 @@ def battery_efficiency(episodes: list) -> float:
 
 
 def avg_charging_events(episodes: list) -> float:
-    """Average number of charging events per episode."""
     if not episodes:
         return 0.0
     return sum(e.get("charging_events", 0) for e in episodes) / len(episodes)
 
 def evaluate_one(path: Path, window: int = 200) -> dict:
-    """Compute all metrics for one algorithm's metrics file."""
     episodes = load_metrics(path)
     base = _algo_base_name(path)
     if not episodes:
         return {"algorithm": base, "error": "No episodes", "path": str(path)}
     ep80 = episodes_to_success_threshold(episodes, threshold=0.80, window=window)
+
+    # Last 1000 episodes metrics
+    last_1000 = episodes[-1000:] if len(episodes) >= 1000 else episodes
+    def safe(val): return round(val, 2) if isinstance(val, float) else val
     return {
         "algorithm": base,
         "success_rate_pct": round(success_rate(episodes), 1),
@@ -135,6 +107,15 @@ def evaluate_one(path: Path, window: int = 200) -> dict:
         "mean_reward": round(mean_reward(episodes), 2),
         "mean_steps": round(mean_steps(episodes), 1),
         "total_episodes": len(episodes),
+        # Last 1000
+        "last_1000_success_rate_pct": round(success_rate(last_1000), 1),
+        "last_1000_battery_death_pct": round(battery_death_rate(last_1000), 1),
+        "last_1000_avg_deliveries": round(avg_deliveries(last_1000), 2),
+        "last_1000_avg_steps_per_delivery": round(avg_steps_per_delivery(last_1000), 1),
+        "last_1000_battery_efficiency_pct": round(battery_efficiency(last_1000), 1),
+        "last_1000_avg_charging": round(avg_charging_events(last_1000), 2),
+        "last_1000_mean_reward": round(mean_reward(last_1000), 2),
+        "last_1000_mean_steps": round(mean_steps(last_1000), 1),
     }
 
 
@@ -172,7 +153,6 @@ def main():
     per_file = [evaluate_one(p, window=args.window) for p in metrics_files]
 
     if args.aggregate_seeds:
-        # Group by algorithm base (ppo, dqn, sac)
         by_algo = defaultdict(list)
         for r in per_file:
             if "error" in r:
@@ -259,6 +239,33 @@ def main():
             bd = f"{r['battery_death_pct']}%"
             e80 = str(r["episodes_to_80pct"])
             print(row_fmt.format(key.upper(), sr, bd, e80))
+
+        print("\n" + "=" * 80)
+        print("Table 2 (Last 1000 Episodes)")
+        print("=" * 80)
+        h2 = "{:10} {:>12} {:>14} {:>12} {:>10} {:>14} {:>12} {:>12}".format(
+            "Algorithm", "Success%", "Batt Death%", "Avg Deliv", "Avg Steps",
+            "Steps/Deliv", "Avg Charge", "Avg Reward")
+        print(h2)
+        print("-" * 80)
+        seen2 = set()
+        for r in results:
+            if "error" in r:
+                continue
+            key = r["algorithm"]
+            if key in seen2:
+                continue
+            seen2.add(key)
+            print("{:10} {:>12} {:>14} {:>12} {:>10} {:>14} {:>12} {:>12}".format(
+                key.upper(),
+                f"{r['last_1000_success_rate_pct']}%",
+                f"{r['last_1000_battery_death_pct']}%",
+                f"{r['last_1000_avg_deliveries']}",
+                f"{r['last_1000_mean_steps']}",
+                f"{r['last_1000_avg_steps_per_delivery']}",
+                f"{r['last_1000_avg_charging']}",
+                f"{r['last_1000_mean_reward']}",
+            ))
 
     if args.out_table:
         out_path = Path(args.out_table)

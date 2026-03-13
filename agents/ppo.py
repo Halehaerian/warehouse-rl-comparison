@@ -1,9 +1,3 @@
-"""PPO Agent (Proximal Policy Optimization) for discrete actions.
-
-Improved: deeper/wider network, value clipping, orthogonal init, reward scaling,
-and configurable rollout/entropy for better exploration and stability.
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,7 +7,6 @@ from agents.base import BaseAgent
 
 
 def orthogonal_init(m, gain=1.0):
-    """Orthogonal initialization for stability; smaller gain for last layer."""
     if isinstance(m, nn.Linear):
         nn.init.orthogonal_(m.weight, gain=gain)
         if m.bias is not None:
@@ -21,7 +14,6 @@ def orthogonal_init(m, gain=1.0):
 
 
 class ActorCritic(nn.Module):
-    """Deeper actor-critic with optional layer norm and proper init."""
 
     def __init__(self, obs_size: int, n_actions: int, hidden: int = 256,
                  n_layers: int = 2, use_layer_norm: bool = True):
@@ -47,7 +39,7 @@ class ActorCritic(nn.Module):
         for m in self.shared.modules():
             if isinstance(m, nn.Linear):
                 orthogonal_init(m, gain=np.sqrt(2))
-        orthogonal_init(self.actor, gain=0.01)  # near-uniform policy at start
+        orthogonal_init(self.actor, gain=0.01) 
         for m in self.critic.modules():
             if isinstance(m, nn.Linear):
                 orthogonal_init(m, gain=1.0)
@@ -126,7 +118,6 @@ class PPOAgent(BaseAgent):
                 return logits.argmax(1).item()
 
     def store_transition(self, state, action, reward, done):
-        """Store one transition; reward is scaled for value stability."""
         self.buf_states.append(state)
         self.buf_actions.append(action)
         self.buf_log_probs.append(self._last_log_prob)
@@ -138,7 +129,6 @@ class PPOAgent(BaseAgent):
         return len(self.buf_states) >= self.rollout_len
 
     def update(self, next_state=None, **kwargs):
-        """Run PPO update with value clipping and normalized advantages."""
         if not self.ready_to_update():
             return {}
 
@@ -185,7 +175,6 @@ class PPOAgent(BaseAgent):
                 surr2 = ratio.clamp(1 - self.clip_eps, 1 + self.clip_eps) * advantages[b]
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value loss with clipping (PPO2): clip new value to old value ± clip
                 if self.value_clip > 0:
                     value_clipped = old_values[b] + (new_values - old_values[b]).clamp(
                         -self.value_clip, self.value_clip
@@ -204,12 +193,10 @@ class PPOAgent(BaseAgent):
                 self.optimizer.step()
                 total_loss += loss.item()
 
-        # Learning rate decay (helps fine-tune in longer runs)
         if self.lr_decay < 1.0:
             for g in self.optimizer.param_groups:
                 g["lr"] = max(self.lr_min, g["lr"] * self.lr_decay)
 
-        # Entropy coefficient decay: explore early, exploit later
         self.ent_coef = max(self.ent_coef_min, self.ent_coef * self.ent_coef_decay)
 
         self._reset_buffer()

@@ -1,5 +1,3 @@
-#Coding derived from Phil Tabor's Youtube video - https://www.youtube.com/watch?v=ioidsRlf79o
-
 import numpy as np
 import torch.nn.functional as F
 import torch as T

@@ -1,4 +1,3 @@
-"""Comprehensive RL algorithm comparison analysis."""
 import json
 import numpy as np
 
@@ -19,7 +18,6 @@ for algo in algos:
     except FileNotFoundError:
         print(f'{algo}: FILE NOT FOUND')
 
-# --- 1. Convergence Speed ---
 print('\n' + '=' * 80)
 print('1. CONVERGENCE SPEED (rolling window=200)')
 print('=' * 80)
@@ -42,7 +40,6 @@ for algo in algos:
         row += f' {val:<15}'
     print(row)
 
-# --- 2. Final Performance (last 1000 episodes) ---
 print('\n' + '=' * 80)
 print('2. FINAL PERFORMANCE (last 1000 episodes)')
 print('=' * 80)
@@ -58,7 +55,6 @@ for algo in algos:
     avg_d = np.mean([ep.get('deliveries', 0) for ep in last])
     print(f'{algo.upper():<8} {sr:>6.1f}%     {avg_r:>8.1f}      {avg_s:>6.1f}      {avg_d:>6.2f}')
 
-# --- 3. Stability (second half of training) ---
 print('\n' + '=' * 80)
 print('3. STABILITY (success rate variance, second half of training)')
 print('=' * 80)
@@ -81,7 +77,6 @@ for algo in algos:
     dips = sum(1 for r in half if r < 90)
     print(f'{algo.upper():<8} {mean_sr:>6.1f}%     {std_sr:>5.2f}%   {min_sr:>6.1f}%     {max_sr:>6.1f}%     {dips}')
 
-# --- 4. Sample Efficiency (steps per successful episode) ---
 print('\n' + '=' * 80)
 print('4. SAMPLE EFFICIENCY (steps in successful episodes)')
 print('=' * 80)
@@ -97,7 +92,6 @@ for algo in algos:
     else:
         print(f'{algo.upper():<8} 0')
 
-# --- 5. Battery Management ---
 print('\n' + '=' * 80)
 print('5. BATTERY MANAGEMENT')
 print('=' * 80)
@@ -112,7 +106,6 @@ for algo in algos:
     batt_left = np.mean([ep.get('battery_remaining', 0) for ep in data])
     print(f'{algo.upper():<8} {bd:<16} {bd_rate:>6.1f}%       {charges:>7.2f}       {batt_left:>7.1f}')
 
-# --- 6. Learning Phases ---
 print('\n' + '=' * 80)
 print('6. LEARNING PHASES (success rate at milestones)')
 print('=' * 80)
@@ -136,7 +129,6 @@ for algo in algos:
             row += f' {"N/A":<10}'
     print(row)
 
-# --- 7. Average Reward Comparison ---
 print('\n' + '=' * 80)
 print('7. REWARD PROGRESSION (avg reward per 1000-ep block)')
 print('=' * 80)

@@ -1,5 +1,3 @@
-"""RL Agents for Warehouse Environment."""
-
 from agents.base import BaseAgent
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent

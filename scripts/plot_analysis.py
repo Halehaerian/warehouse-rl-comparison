@@ -1,19 +1,3 @@
-"""
-Generate comprehensive analysis plots for RL algorithm comparison.
-
-Produces 6 publication-quality charts:
-  1. Success Rate (rolling)
-  2. Reward Progression (rolling)
-  3. Battery Death Rate (rolling)
-  4. Convergence Bar Chart (episodes to 80%, 95%, 99%)
-  5. Final Performance Radar/Bar Chart
-  6. Steps per Successful Episode (rolling)
-
-Usage:
-    python scripts/plot_analysis.py
-    python scripts/plot_analysis.py --savedir outputs/figures
-"""
-
 import argparse
 import json
 from pathlib import Path
@@ -43,7 +27,6 @@ def rolling_mean(x, window):
 
 
 def plot_success_rate(all_data, savedir):
-    """1. Success rate learning curves."""
     fig, ax = plt.subplots(figsize=(10, 6))
     for algo in ALGOS:
         data = all_data[algo]
@@ -68,7 +51,6 @@ def plot_success_rate(all_data, savedir):
 
 
 def plot_reward(all_data, savedir):
-    """2. Reward learning curves."""
     fig, ax = plt.subplots(figsize=(10, 6))
     for algo in ALGOS:
         data = all_data[algo]
@@ -90,7 +72,6 @@ def plot_reward(all_data, savedir):
 
 
 def plot_battery_death(all_data, savedir):
-    """3. Battery death rate."""
     fig, ax = plt.subplots(figsize=(10, 6))
     for algo in ALGOS:
         data = all_data[algo]
@@ -111,7 +92,6 @@ def plot_battery_death(all_data, savedir):
 
 
 def plot_convergence_bars(all_data, savedir):
-    """4. Convergence speed bar chart."""
     thresholds = [80, 95, 99]
     results = {}
     for algo in ALGOS:
@@ -126,7 +106,7 @@ def plot_convergence_bars(all_data, savedir):
                 if rate >= t:
                     found = i
                     break
-            algo_res[t] = found if found else n + 500  # cap for "Never"
+            algo_res[t] = found if found else n + 500  
         results[algo] = algo_res
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -158,7 +138,6 @@ def plot_convergence_bars(all_data, savedir):
 
 
 def plot_final_performance(all_data, savedir):
-    """5. Final performance comparison (last 1000 episodes)."""
     metrics = {}
     for algo in ALGOS:
         last = all_data[algo][-1000:]
@@ -172,7 +151,6 @@ def plot_final_performance(all_data, savedir):
     names = [ALGO_NAMES[a] for a in ALGOS]
     colors = [ALGO_COLORS[a] for a in ALGOS]
 
-    # Success Rate
     vals = [metrics[a]['success'] for a in ALGOS]
     axes[0].bar(names, vals, color=colors, edgecolor='white', linewidth=0.5)
     for i, v in enumerate(vals):
@@ -182,7 +160,6 @@ def plot_final_performance(all_data, savedir):
     axes[0].set_ylabel('%')
     axes[0].grid(True, alpha=0.3, axis='y')
 
-    # Avg Reward
     vals = [metrics[a]['reward'] for a in ALGOS]
     axes[1].bar(names, vals, color=colors, edgecolor='white', linewidth=0.5)
     for i, v in enumerate(vals):
@@ -191,7 +168,6 @@ def plot_final_performance(all_data, savedir):
     axes[1].set_ylim(min(vals) - 30, max(vals) + 30)
     axes[1].grid(True, alpha=0.3, axis='y')
 
-    # Avg Steps (lower is better)
     vals = [metrics[a]['steps'] for a in ALGOS]
     axes[2].bar(names, vals, color=colors, edgecolor='white', linewidth=0.5)
     for i, v in enumerate(vals):
@@ -200,7 +176,6 @@ def plot_final_performance(all_data, savedir):
     axes[2].set_ylim(0, max(vals) + 30)
     axes[2].grid(True, alpha=0.3, axis='y')
 
-    # Battery Death Rate (lower is better)
     vals = [metrics[a]['battery_death'] for a in ALGOS]
     axes[3].bar(names, vals, color=colors, edgecolor='white', linewidth=0.5)
     for i, v in enumerate(vals):
@@ -218,7 +193,6 @@ def plot_final_performance(all_data, savedir):
 
 
 def plot_steps_efficiency(all_data, savedir):
-    """6. Steps per successful episode over training."""
     fig, ax = plt.subplots(figsize=(10, 6))
     for algo in ALGOS:
         data = all_data[algo]

@@ -1,13 +1,3 @@
-"""
-Generate a single poster-style summary figure for RL algorithm comparison.
-
-Produces one high-resolution image with all key findings arranged for a poster.
-
-Usage:
-    python scripts/plot_poster.py
-    python scripts/plot_poster.py --savedir outputs/figures
-"""
-
 import json
 from pathlib import Path
 import argparse
@@ -83,14 +73,10 @@ def main():
     conv = get_convergence(all_data)
     final = get_final_metrics(all_data)
 
-    # =====================================================================
-    # POSTER LAYOUT: 3 rows x 3 cols + title row
-    # =====================================================================
     fig = plt.figure(figsize=(24, 18), facecolor='white')
     gs = gridspec.GridSpec(4, 3, figure=fig, height_ratios=[0.08, 1, 1, 0.8],
                            hspace=0.35, wspace=0.3)
 
-    # --- Title Banner ---
     ax_title = fig.add_subplot(gs[0, :])
     ax_title.axis('off')
     ax_title.text(0.5, 0.7,
@@ -102,11 +88,6 @@ def main():
                   fontsize=14, ha='center', va='center', color='#555555',
                   transform=ax_title.transAxes)
 
-    # =====================================================================
-    # ROW 1: Learning Curves
-    # =====================================================================
-
-    # (1,0) Success Rate
     ax1 = fig.add_subplot(gs[1, 0])
     for algo in ALGOS:
         eps = [e['episode'] for e in all_data[algo]]
@@ -122,7 +103,6 @@ def main():
     ax1.set_ylim(-2, 105)
     ax1.grid(True, alpha=0.2)
 
-    # (1,1) Reward
     ax2 = fig.add_subplot(gs[1, 1])
     for algo in ALGOS:
         eps = [e['episode'] for e in all_data[algo]]
@@ -135,7 +115,6 @@ def main():
     ax2.legend(fontsize=10, loc='lower right')
     ax2.grid(True, alpha=0.2)
 
-    # (1,2) Battery Death Rate
     ax3 = fig.add_subplot(gs[1, 2])
     for algo in ALGOS:
         eps = [e['episode'] for e in all_data[algo]]
@@ -148,11 +127,6 @@ def main():
     ax3.legend(fontsize=10, loc='upper right')
     ax3.grid(True, alpha=0.2)
 
-    # =====================================================================
-    # ROW 2: Bar Charts
-    # =====================================================================
-
-    # (2,0) Convergence Speed
     ax4 = fig.add_subplot(gs[2, 0])
     thresholds = [80, 95, 99]
     th_colors = ['#85C1E9', '#5DADE2', '#2E86C1']
@@ -184,19 +158,17 @@ def main():
     ax4.legend(title='Threshold', fontsize=9)
     ax4.grid(True, alpha=0.2, axis='y')
 
-    # (2,1) Final Performance - 4 grouped bars
     ax5 = fig.add_subplot(gs[2, 1])
     categories = ['Success %', 'Reward\n(scaled)', 'Steps\n(inv. scaled)', 'Battery\nSafety %']
     x2 = np.arange(len(categories))
     width2 = 0.18
     for idx, algo in enumerate(ALGOS):
         f = final[algo]
-        # Normalize for visual comparison
         vals = [
-            f['success'],                          # 0-100
-            f['reward'] / 7.5,                     # scale ~700 to ~93
-            (1 - f['steps'] / 500) * 100,          # invert: lower steps = higher bar
-            100 - f['battery_death'],               # invert: lower death = higher
+            f['success'],                          
+            f['reward'] / 7.5,                     
+            (1 - f['steps'] / 500) * 100,          
+            100 - f['battery_death'],              
         ]
         bars = ax5.bar(x2 + idx * width2, vals, width2,
                        label=ALGO_NAMES[algo], color=ALGO_COLORS[algo],
@@ -209,7 +181,7 @@ def main():
     ax5.set_ylim(0, 110)
     ax5.grid(True, alpha=0.2, axis='y')
 
-    # (2,2) Steps Efficiency
+    
     ax6 = fig.add_subplot(gs[2, 2])
     for algo in ALGOS:
         data = all_data[algo]
@@ -228,13 +200,10 @@ def main():
     ax6.legend(fontsize=10)
     ax6.grid(True, alpha=0.2)
 
-    # =====================================================================
-    # ROW 3: Key Findings Summary Table
-    # =====================================================================
     ax_table = fig.add_subplot(gs[3, :])
     ax_table.axis('off')
 
-    # Build table data
+   
     col_labels = ['Algorithm', 'Eps to 80%', 'Eps to 95%', 'Eps to 99%',
                   'Final SR%', 'Avg Reward', 'Avg Steps', 'Battery\nDeath %', 'Key Strength']
     strengths = {
@@ -265,17 +234,14 @@ def main():
     table.auto_set_font_size(False)
     table.set_fontsize(11)
     table.scale(1.0, 2.0)
-
-    # Style header
+    
     for j in range(len(col_labels)):
         cell = table[0, j]
         cell.set_facecolor('#2C3E50')
         cell.set_text_props(color='white', fontweight='bold', fontsize=11)
-
-    # Style rows with algo colors
+    
     for i, algo in enumerate(ALGOS):
         color = ALGO_COLORS[algo]
-        # Light tint of the algo color
         r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
         light = (r / 255 * 0.15 + 0.85, g / 255 * 0.15 + 0.85, b / 255 * 0.15 + 0.85)
         for j in range(len(col_labels)):
@@ -283,17 +249,13 @@ def main():
 
     ax_table.set_title('Summary of Results', fontsize=14, fontweight='bold', pad=20)
 
-    # Save
     fig.savefig(savedir / 'poster_summary.png', dpi=200, bbox_inches='tight',
                 facecolor='white', edgecolor='none')
     plt.close(fig)
     print(f'Saved {savedir / "poster_summary.png"}')
 
-    # Also save a PDF version for printing
     fig2 = plt.figure(figsize=(24, 18), facecolor='white')
-    # Re-render for PDF (matplotlib handles vector output)
     import subprocess
-    # Just save the same figure as PDF
     fig_pdf = plt.figure(figsize=(24, 18), facecolor='white')
     plt.close(fig_pdf)
     print(f'\nPoster image ready at: {savedir / "poster_summary.png"}')

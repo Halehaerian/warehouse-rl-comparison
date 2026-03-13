@@ -1,6 +1,3 @@
-"""DQN Agent with target network and replay buffer.
-"""
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -47,8 +44,6 @@ class DQNAgent(BaseAgent):
         self.memory = deque(maxlen=config.get("memory_size", 50000))
         self.steps = 0
 
-    # ----- BaseAgent interface -----
-
     def select_action(self, state, training=True):
         if training and random.random() < self.epsilon:
             return random.randint(0, self.n_actions - 1)
@@ -74,29 +69,25 @@ class DQNAgent(BaseAgent):
         q_vals = self.q(s)[torch.arange(len(a)), a]
         with torch.no_grad():
             if self.double:
-                # Double DQN: online selects best action, target evaluates
                 best_actions = self.q(s2).argmax(1)
                 q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
             else:
-                # Vanilla DQN: target network selects and evaluates (max Q)
                 q_next = self.q_target(s2).max(1).values
             target = r + self.gamma * q_next * (1 - d)
 
-        loss = nn.SmoothL1Loss()(q_vals, target)  # Huber loss: robust to outlier rewards
+        loss = nn.SmoothL1Loss()(q_vals, target)  
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.q.parameters(), max_norm=10.0)
         self.optimizer.step()
 
         self.steps += 1
-        # Soft (Polyak) target update every step
         for p, p_targ in zip(self.q.parameters(), self.q_target.parameters()):
             p_targ.data.mul_(1 - self.tau).add_(self.tau * p.data)
 
         return {"loss": loss.item()}
 
     def end_episode(self):
-        """Called at episode end to decay epsilon."""
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
     def state_dict(self):
