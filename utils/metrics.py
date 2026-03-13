@@ -1,5 +1,3 @@
-"""Metrics collection and persistence."""
-
 import json
 import time
 from pathlib import Path
@@ -7,7 +5,6 @@ from collections import defaultdict
 
 
 class MetricsCollector:
-    """Collects per-episode metrics and saves to JSON."""
 
     def __init__(self):
         self.episodes = []

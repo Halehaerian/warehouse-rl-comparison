@@ -140,7 +140,6 @@ class PPOAgent(BaseAgent):
             else:
                 last_val = 0.0
 
-        # GAE
         advantages = []
         gae = 0.0
         values = self.buf_values + [last_val]
@@ -156,34 +155,32 @@ class PPOAgent(BaseAgent):
         returns = advantages + torch.FloatTensor(self.buf_values).to(self.device)
         old_values = torch.FloatTensor(self.buf_values).to(self.device)
 
-        # Normalize advantages (critical for stability)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         total_loss = 0.0
-        n = len(states)
+        num = len(states)
         for _ in range(self.epochs):
-            idx = torch.randperm(n)
-            for start in range(0, n, self.batch_size):
-                end = min(start + self.batch_size, n)
-                b = idx[start:end]
+            idx = torch.randperm(num)
+            for start in range(0, num, self.batch_size):
+                end = min(start + self.batch_size, num)
+                batch = idx[start:end]
 
-                new_log_probs, entropy, new_values = self.net.evaluate(states[b], actions[b])
-                ratio = (new_log_probs - old_log_probs[b]).exp()
+                new_log_probs, entropy, new_values = self.net.evaluate(states[batch], actions[batch])
+                ratio = (new_log_probs - old_log_probs[batch]).exp()
 
-                # Clipped policy loss
-                surr1 = ratio * advantages[b]
-                surr2 = ratio.clamp(1 - self.clip_eps, 1 + self.clip_eps) * advantages[b]
+                surr1 = ratio * advantages[batch]
+                surr2 = ratio.clamp(1 - self.clip_eps, 1 + self.clip_eps) * advantages[batch]
                 policy_loss = -torch.min(surr1, surr2).mean()
 
                 if self.value_clip > 0:
-                    value_clipped = old_values[b] + (new_values - old_values[b]).clamp(
+                    value_clipped = old_values[batch] + (new_values - old_values[batch]).clamp(
                         -self.value_clip, self.value_clip
                     )
-                    vf_loss1 = (new_values - returns[b]).pow(2)
-                    vf_loss2 = (value_clipped - returns[b]).pow(2)
+                    vf_loss1 = (new_values - returns[batch]).pow(2)
+                    vf_loss2 = (value_clipped - returns[batch]).pow(2)
                     value_loss = 0.5 * torch.max(vf_loss1, vf_loss2).mean()
                 else:
-                    value_loss = 0.5 * (new_values - returns[b]).pow(2).mean()
+                    value_loss = 0.5 * (new_values - returns[batch]).pow(2).mean()
 
                 loss = policy_loss + self.vf_coef * value_loss - self.ent_coef * entropy.mean()
 

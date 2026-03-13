@@ -32,7 +32,6 @@ class BatteryRenderer:
         self.grid_size = 30
         self.icon_size = 20
 
-        # Window dimensions with extra space for battery bar
         self.width = 1 + self.cols * (self.grid_size + 1)
         self.height = 2 + self.rows * (self.grid_size + 1) + 60
 
@@ -43,7 +42,6 @@ class BatteryRenderer:
         )
         self.window.on_close = self._on_close
 
-        # State
         self.battery_level = 100.0
         self.step_count = 0
         self.deliveries = 0
@@ -51,7 +49,6 @@ class BatteryRenderer:
         self.is_carrying = False
         self.closed = False
 
-        # Colors
         self._BACKGROUND = (255, 255, 255)
         self._GRID = (200, 200, 200)
         self._SHELF = (72, 61, 139)
@@ -352,10 +349,10 @@ def visualize(args):
                 pickups += 1
                 total_pickups += 1
 
-            new_del = info.get("deliveries", 0)
-            if new_del > deliveries:
-                total_deliveries += new_del - deliveries
-                deliveries = new_del
+            current_deliveries = info.get("deliveries", 0)
+            if current_deliveries > deliveries:
+                total_deliveries += current_deliveries - deliveries
+                deliveries = current_deliveries
 
             battery = info.get("battery_levels", [100])[0]
             is_charging = (hasattr(env, "mission_state") and env.mission_state[0] == 2)
@@ -369,10 +366,10 @@ def visualize(args):
             if done:
                 break
 
-        mc = info.get("mission_complete", False)
-        bd = info.get("battery_dead", False)
+        mission_complete = info.get("mission_complete", False)
+        is_battery_dead = info.get("battery_dead", False)
         stuck = info.get("agent_stuck", False)
-        status = "SUCCESS" if mc else ("BATTERY DEAD" if bd else ("STUCK" if stuck else "TIMEOUT"))
+        status = "SUCCESS" if mission_complete else ("BATTERY DEAD" if is_battery_dead else ("STUCK" if stuck else "TIMEOUT"))
         print(f"  {status} | Steps: {steps} | Pickups: {pickups} | Deliveries: {deliveries}")
 
     print(f"\nTotal: {total_pickups} pickups, {total_deliveries} deliveries")

@@ -47,9 +47,9 @@ class DQNAgent(BaseAgent):
     def select_action(self, state, training=True):
         if training and random.random() < self.epsilon:
             return random.randint(0, self.n_actions - 1)
-        t = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            return self.q(t).argmax(1).item()
+            return self.q(state_tensor).argmax(1).item()
 
     def update(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -66,16 +66,16 @@ class DQNAgent(BaseAgent):
         s2 = torch.FloatTensor(np.array(s2)).to(self.device)
         d = torch.FloatTensor(d).to(self.device)
 
-        q_vals = self.q(s)[torch.arange(len(a)), a]
+        current_q_values = self.q(s)[torch.arange(len(a)), a]
         with torch.no_grad():
             if self.double:
                 best_actions = self.q(s2).argmax(1)
-                q_next = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
+                next_q_values = self.q_target(s2)[torch.arange(len(best_actions)), best_actions]
             else:
-                q_next = self.q_target(s2).max(1).values
-            target = r + self.gamma * q_next * (1 - d)
+                next_q_values = self.q_target(s2).max(1).values
+            target = r + self.gamma * next_q_values * (1 - d)
 
-        loss = nn.SmoothL1Loss()(q_vals, target)  
+        loss = nn.SmoothL1Loss()(current_q_values, target)  
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.q.parameters(), max_norm=10.0)

@@ -64,13 +64,13 @@ class WarehouseWrapper(Wrapper):
         super().__init__(env)
         self.max_deliveries = max_deliveries
 
-        bc = battery_config or {}
-        self.max_battery = bc.get("max_battery", 100.0)
-        self.battery_drain = bc.get("battery_drain", 0.3)
-        self.charge_rate = bc.get("charge_rate", 25.0)
-        self.battery_threshold = bc.get("battery_threshold", 25.0)
-        self.battery_resume = bc.get("battery_resume", 70.0)
-        self.charger_location = tuple(bc.get("charger_location", (0, 0)))
+        battery_configuration = battery_config or {}
+        self.max_battery = battery_configuration.get("max_battery", 100.0)
+        self.battery_drain = battery_configuration.get("battery_drain", 0.3)
+        self.charge_rate = battery_configuration.get("charge_rate", 25.0)
+        self.battery_threshold = battery_configuration.get("battery_threshold", 25.0)
+        self.battery_resume = battery_configuration.get("battery_resume", 70.0)
+        self.charger_location = tuple(battery_configuration.get("charger_location", (0, 0)))
 
         self._setup_observation_space()
     def _setup_observation_space(self):
@@ -253,13 +253,13 @@ class WarehouseWrapper(Wrapper):
         self.segment_steps += 1
 
         now_carrying = [a.carrying_shelf is not None for a in self.env.unwrapped.agents]
-        pos = self._agent_positions()
+        agent_positions = self._agent_positions()
         shelves = self._requested_shelves()
         goals = self._goal_positions()
 
-        env_r = sum(reward) if isinstance(reward, (list, tuple)) else reward
+        environment_reward = sum(reward) if isinstance(reward, (list, tuple)) else reward
 
-        if env_r > 0:
+        if environment_reward > 0:
             for i in range(self.n_agents):
                 shelf = was_carrying_shelf[i]
                 if shelf is not None:
@@ -274,38 +274,38 @@ class WarehouseWrapper(Wrapper):
             if was_carrying[i] != now_carrying[i]:
                 self.prev_potential[i] = None
 
-        r = -0.5  
+        reward = -0.5  
 
         for i in range(self.n_agents):
-            act = action[i] if hasattr(action, "__iter__") else action
-            p = pos[i]
+            agent_action = action[i] if hasattr(action, "__iter__") else action
+            position_vector = agent_positions[i]
             battery = self.battery_levels[i]
             carrying = now_carrying[i]
 
-            target = self._get_target(i, p, carrying, battery)
-            phi_now = self._potential(p, target)
+            target = self._get_target(i, position_vector, carrying, battery)
+            current_potential = self._potential(position_vector, target)
 
             if self.prev_potential[i] is not None:
-                shaping = 0.99 * phi_now - self.prev_potential[i]
-                r += 3.0 * shaping
+                shaping = 0.99 * current_potential - self.prev_potential[i]
+                reward += 3.0 * shaping
 
-            self.prev_potential[i] = phi_now
+            self.prev_potential[i] = current_potential
 
             # Wall-bump penalty (only FORWARD=1, not NOOP=0)
-            if p == old_pos[i] and act == 1:
-                r -= 1.0
+            if position_vector == old_pos[i] and agent_action == 1:
+                reward -= 1.0
 
             #Toggle logic (wrong-shelf pickup already blocked by action masking)
-            if act == 4:
-                if not was_carrying[i] and p in set(shelves):
-                    r += 3.0  
-                elif was_carrying[i] and p in set(goals):
-                    r += 3.0  
+            if agent_action == 4:
+                if not was_carrying[i] and position_vector in set(shelves):
+                    reward += 3.0  
+                elif was_carrying[i] and position_vector in set(goals):
+                    reward += 3.0  
                 else:
-                    r -= 0.5 
+                    reward -= 0.5 
 
         for i in range(self.n_agents):
-            if self._is_at_charger(pos[i]):
+            if self._is_at_charger(agent_positions[i]):
                 self.battery_levels[i] = min(
                     self.max_battery,
                     self.battery_levels[i] + self.charge_rate
@@ -325,29 +325,29 @@ class WarehouseWrapper(Wrapper):
                 self.prev_potential[i] = None 
 
             if self.mission_state[i] == CHARGING:
-                if self._is_at_charger(pos[i]):
-                    r += 5.0  
+                if self._is_at_charger(agent_positions[i]):
+                    reward += 5.0  
                     if battery >= self.battery_resume:
                         self.mission_state[i] = SEEK_SHELF
                         self.prev_potential[i] = None 
-                        r += 10.0  
+                        reward += 10.0  
                         self.charging_events += 1
 
         for i in range(self.n_agents):
             if (self.mission_state[i] == SEEK_SHELF
                     and not was_carrying[i] and now_carrying[i]):
-                r += 20.0
+                reward += 20.0
                 self.mission_state[i] = DELIVER
 
             if self.mission_state[i] == DELIVER and was_carrying[i] and not now_carrying[i]:
                 check_r = sum(reward) if isinstance(reward, (list, tuple)) else reward
                 if check_r <= 0:
-                    r -= 30.0
+                    reward -= 30.0
                     self.mission_state[i] = SEEK_SHELF
 
-        if env_r > 0:
+        if environment_reward > 0:
             self.deliveries_count += 1
-            r += 50.0
+            reward += 50.0
 
             self.delivery_segment_steps.append(self.segment_steps)
             self.segment_steps = 0
@@ -361,12 +361,12 @@ class WarehouseWrapper(Wrapper):
 
         if battery_dead:
             terminated = True
-            r -= 50.0 
+            reward -= 50.0 
 
         if mission_done:
             terminated = True
             battery_ratio = min(self.battery_levels) / self.max_battery
-            r += 100.0 + 50.0 * battery_ratio
+            reward += 100.0 + 50.0 * battery_ratio
 
         obs = self._extend_obs(obs)
         info.update({
@@ -380,7 +380,7 @@ class WarehouseWrapper(Wrapper):
             "delivery_segment_steps": self.delivery_segment_steps.copy(),
             "agent_stuck": False,
         })
-        return obs, float(r), terminated, truncated, info
+        return obs, float(reward), terminated, truncated, info
 
 
 def make_env(env_config, battery_config=None):
