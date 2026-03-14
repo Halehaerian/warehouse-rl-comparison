@@ -61,12 +61,36 @@ python visualize.py --algo sac_original --model models/Archive/sac_final.pt --en
 
 - **Evaluate metrics** (reads `outputs/*_metrics.json`):
   ```
-  python scripts/evaluate.py
+  python scripts/evaluate.py --outputs outputs
   ```
+  Prints six tables covering all paper results:
+  | Table | Content |
+  |-------|---------|
+  | 1 | Full 10,000-episode summary (success rate, battery deaths, episodes to 80%) |
+  | 2 | Last 1,000 episodes (reward, steps, deliveries, charges, battery deaths) |
+  | 3 | Battery management — deaths, death rate, avg charges, avg battery left |
+  | 4 | Training stability ep 5,001–10,000 (mean SR, std dev, min, max, dips <90%) |
+  | 5 | Learning milestones — rolling-window SR at ep 500/1k/2k/3k/5k/10k |
+  | 6 | Convergence — episodes to reach 80%, 95%, 99% success rate |
+
 - **Plot learning curves** (saves figures to `outputs/`):
   ```
   python scripts/plot_learning_curves.py
   ```
+- **Statistical analysis:**
+  ```
+  python scripts/analysis.py
+  ```
+- **Analysis plots:**
+  ```
+  python scripts/plot_analysis.py
+  ```
+- **Poster figures:**
+  ```
+  python scripts/plot_poster.py
+  ```
+
+> **Note:** Pre-trained metrics are already in `outputs/*_metrics.json` and pre-trained model checkpoints are in `models/`, so you can run evaluation and visualization without retraining.
 
 ## Map Presets
 
@@ -88,8 +112,11 @@ visualize.py          # Run and render a trained agent
 configs/config.py     # Environment presets and algorithm hyperparameters
 agents/               # Agent implementations (DQN, PPO, SAC)
 envs/warehouse.py     # Custom warehouse environment wrapper
-scripts/evaluate.py   # Metrics evaluation
+scripts/evaluate.py   # Metrics evaluation — prints 6 tables (final perf, battery, stability, milestones, convergence)
+scripts/analysis.py   # Statistical analysis
 scripts/plot_learning_curves.py  # Learning curve plots
-models/               # Saved model checkpoints
-outputs/              # Training metrics (JSON) and plots
+scripts/plot_analysis.py         # Analysis plots
+scripts/plot_poster.py           # Poster figures
+models/               # Saved model checkpoints (pre-trained, ready to use)
+outputs/              # Training metrics (JSON, pre-computed) and plots
 ```
