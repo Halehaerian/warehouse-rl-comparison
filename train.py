@@ -1,14 +1,3 @@
-"""
-Train RL agents on the warehouse environment.
-
-Usage:
-    python train.py --algo ppo
-    python train.py --algo ppo --env 5x5 --episodes 1000
-    python train.py --algo ppo --env 7x7 --episodes 2000
-    python train.py --algo ppo --env 10x10 --episodes 3000
-    python train.py --algo ppo --shelf-columns 8 --shelf-rows 8 --max-steps 500
-"""
-
 import argparse
 import os
 import copy
@@ -23,7 +12,7 @@ from training.trainer import train
 def main():
     parser = argparse.ArgumentParser(description="Train warehouse RL agents")
     parser.add_argument("--algo", type=str, default="dqn",
-                        choices=["dqn", "ppo", "sac", "all"],
+                        choices=["ddqn", "dqn", "ppo", "sac", "all"],
                         help="Algorithm to train (default: dqn)")
     parser.add_argument("--episodes", type=int, default=None,
                         help="Override number of episodes")
@@ -74,7 +63,7 @@ def main():
     if args.episodes:
         training_config["episodes"] = args.episodes
 
-    algos = ["dqn", "ppo", "sac"] if args.algo == "all" else [args.algo]
+    algos = ["ddqn", "dqn", "ppo", "sac"] if args.algo == "all" else [args.algo]
 
     seed_list = args.seeds if args.seeds is not None else ([args.seed] if args.seed is not None else [None])
 

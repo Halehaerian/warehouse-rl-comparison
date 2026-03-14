@@ -1,13 +1,3 @@
-"""
-Plot learning curves from training metrics: reward, success rate, battery death rate.
-
-Reads outputs/*_metrics.json and saves figures to outputs/ or a given directory.
-
-Usage:
-    python scripts/plot_learning_curves.py
-    python scripts/plot_learning_curves.py --outputs outputs --savedir outputs/figures
-"""
-
 import argparse
 import json
 from pathlib import Path
@@ -23,7 +13,6 @@ def load_metrics(path: Path) -> list:
 
 
 def rolling_mean(x: list, window: int) -> np.ndarray:
-    """Rolling mean; first (window-1) values are nan or partial mean."""
     if window <= 0 or len(x) == 0:
         return np.array(x, dtype=float)
     out = np.full(len(x), np.nan, dtype=float)
@@ -43,8 +32,8 @@ def plot_curves(metrics_dir: Path, savedir: Path, window: int = 200):
         print(f"No *_metrics.json in {metrics_dir}")
         return
 
-    algo_styles = {"dqn": "C0", "ppo": "C1", "sac": "C2"}
-    algo_names = {"dqn": "DQN", "ppo": "PPO", "sac": "SAC"}
+    algo_styles = {"ddqn": "C0", "dqn": "C3", "ppo": "C1", "sac": "C2"}
+    algo_names = {"ddqn": "DDQN", "dqn": "DQN", "ppo": "PPO", "sac": "SAC"}
 
     # --- Reward ---
     plt.figure(figsize=(8, 5))
@@ -69,7 +58,6 @@ def plot_curves(metrics_dir: Path, savedir: Path, window: int = 200):
     plt.close()
     print(f"Saved {savedir / 'learning_curve_reward.png'}")
 
-    # --- Success rate (rolling) ---
     plt.figure(figsize=(8, 5))
     for path in files:
         episodes = load_metrics(path)
@@ -92,7 +80,6 @@ def plot_curves(metrics_dir: Path, savedir: Path, window: int = 200):
     plt.close()
     print(f"Saved {savedir / 'learning_curve_success_rate.png'}")
 
-    # --- Battery death rate (rolling) ---
     plt.figure(figsize=(8, 5))
     for path in files:
         episodes = load_metrics(path)

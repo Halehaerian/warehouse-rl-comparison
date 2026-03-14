@@ -1,12 +1,9 @@
-"""Base agent interface for all RL algorithms."""
-
 from abc import ABC, abstractmethod
 import torch
 import os
 
 
 class BaseAgent(ABC):
-    """Abstract base class for RL agents."""
 
     def __init__(self, obs_size: int, n_actions: int, device: torch.device, config: dict):
         self.obs_size = obs_size

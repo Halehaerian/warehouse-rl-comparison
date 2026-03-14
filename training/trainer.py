@@ -1,8 +1,4 @@
-﻿"""
-Unified training loop for DQN, PPO, and SAC agents.
-"""
-
-import warnings
+﻿import warnings
 import numpy as np
 import torch
 from pathlib import Path
@@ -10,12 +6,13 @@ from pathlib import Path
 from envs.warehouse import make_env
 from agents.dqn import DQNAgent
 from agents.ppo import PPOAgent
-from agents.sac.sac import SACAgent
+from agents.sac.sac_original import SACAgent
 from utils.metrics import MetricsCollector
 
 warnings.filterwarnings("ignore")
 
 AGENT_CLASSES = {
+    "ddqn": DQNAgent,
     "dqn": DQNAgent,
     "ppo": PPOAgent,
     "sac": SACAgent,
@@ -23,14 +20,12 @@ AGENT_CLASSES = {
 
 
 def _obs_to_array(obs):
-    """Convert possibly-tuple observation to numpy array (first agent)."""
     if isinstance(obs, tuple):
         return np.asarray(obs[0], dtype=np.float32)
     return np.asarray(obs, dtype=np.float32)
 
 
 def _wrap_action(env, action):
-    """Wrap single-agent action into multi-agent tuple if needed."""
     if hasattr(env.action_space, "spaces"):
         n = len(env.action_space.spaces)
         return tuple([action] + [0] * (n - 1))  # others NOOP (Action.NOOP=0)
@@ -38,7 +33,6 @@ def _wrap_action(env, action):
 
 
 def _scalar_reward(reward):
-    """Convert reward to float scalar."""
     if isinstance(reward, (list, tuple)):
         return float(reward[0])
     if isinstance(reward, np.ndarray):
@@ -47,7 +41,6 @@ def _scalar_reward(reward):
 
 
 def _save_checkpoint(agent, path, episode):
-    """Save agent checkpoint with episode number embedded."""
     import os
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     data = agent.state_dict()
@@ -57,23 +50,6 @@ def _save_checkpoint(agent, path, episode):
 
 def train(algo, env_config, battery_config, algo_config, training_config,
           verbose=True, seed=None, device=None, resume_path=None):
-    """
-    Train an agent.
-
-    Args:
-        algo: "dqn", "ppo", or "sac"
-        env_config: environment settings dict
-        battery_config: battery settings dict
-        algo_config: algorithm hyperparameters dict
-        training_config: episodes, eval_freq, save_freq
-        verbose: print progress
-        seed: optional int for reproducibility (torch, numpy, env)
-        device: torch device (cuda/cpu); if None, uses cpu
-        resume_path: path to checkpoint to resume from (e.g. models/ppo_ep10000.pt)
-
-    Returns:
-        MetricsCollector with all episode data
-    """
     if seed is not None:
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -84,14 +60,12 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         device = torch.device("cpu")
     env = make_env(env_config, battery_config)
 
-    # Determine obs/action sizes from env (use seed for first reset if reproducibility)
     reset_kw = {"seed": seed} if seed is not None else {}
     obs, _ = env.reset(**reset_kw)
     state = _obs_to_array(obs)
     obs_size = state.shape[0]
     n_actions = env.action_space.spaces[0].n if hasattr(env.action_space, "spaces") else env.action_space.n
 
-    # Create agent
     AgentClass = AGENT_CLASSES[algo]
     agent = AgentClass(obs_size, n_actions, device, algo_config)
 
@@ -105,14 +79,12 @@ def train(algo, env_config, battery_config, algo_config, training_config,
     best_reward = float("-inf")
     model_suffix = f"_seed{seed}" if seed is not None else ""
 
-    # Resume from checkpoint if specified
     start_ep = 1
     if resume_path is not None:
         p = Path(resume_path)
         if p.exists():
             checkpoint = torch.load(str(p), map_location=device)
             agent.load_state_dict(checkpoint)
-            # Try to get episode number from checkpoint data first
             if "episode" in checkpoint:
                 start_ep = checkpoint["episode"] + 1
             elif "_ep" in p.stem:
@@ -132,7 +104,6 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         print(f"{'='*60}\n")
 
     for ep in range(start_ep, episodes + 1):
-        # Per-episode seed for reproducibility (Gymnasium)
         reset_kw = {"seed": seed + ep} if seed is not None else {}
         obs, info = env.reset(**reset_kw)
         state = _obs_to_array(obs)
@@ -146,14 +117,9 @@ def train(algo, env_config, battery_config, algo_config, training_config,
             reward = _scalar_reward(reward)
             next_state = _obs_to_array(next_obs)
 
-            # Algorithm-specific update
             if algo == "ppo":
-                # Pass terminated (not done) so truncated episodes still bootstrap future value
                 agent.store_transition(state, action, reward, terminated)
-                if agent.ready_to_update():
-                    agent.update(next_state=next_state)
             else:
-                # DQN and SAC: pass terminated (not done) so truncated episodes still bootstrap
                 agent.update(state, action, reward, next_state, terminated)
 
             ep_reward += reward
@@ -161,15 +127,12 @@ def train(algo, env_config, battery_config, algo_config, training_config,
 
         agent.end_episode()
 
-        # PPO: flush remaining rollout only if substantial (avoid noisy micro-updates)
-        min_flush = min(getattr(agent, "rollout_len", 128), 512)
-        if algo == "ppo" and len(agent.buf_states) >= min_flush:
+        if algo == "ppo" and agent.ready_to_update():
             agent.update(next_state=state)
 
         metrics.log_episode(ep, ep_reward, env.total_steps, info,
                             epsilon=getattr(agent, "epsilon", None))
 
-        # Logging
         if ep % eval_freq == 0 and verbose:
             avg = metrics.recent_avg("reward", eval_freq)
             extra = f" | eps={agent.epsilon:.3f}" if hasattr(agent, "epsilon") else ""
@@ -183,7 +146,6 @@ def train(algo, env_config, battery_config, algo_config, training_config,
         if ep % save_freq == 0:
             _save_checkpoint(agent, f"models/{algo}_ep{ep}.pt", ep)
 
-    # Final save
     _save_checkpoint(agent, f"models/{algo}_final.pt", episodes)
     metrics.save(f"outputs/{algo}_metrics.json")
 

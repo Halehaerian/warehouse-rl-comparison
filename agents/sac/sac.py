@@ -1,5 +1,3 @@
-#Code adapted form Phil Tabor's Youtube video https://www.youtube.com/watch?v=ioidsRlf79o
-
 import os
 import torch as T
 import torch.nn.functional as F
@@ -20,7 +18,7 @@ class SACAgent(BaseAgent):
         self.n_actions = n_actions
         self.device = device
 
-        self.actor = ActorNetwork(config['alpha'], obs_size, n_actions=n_actions).to(self.device)
+        self.actor = ActorNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
         self.critic_1 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
         self.critic_2 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
         self.value = ValueNetwork(config['lr'], obs_size).to(self.device)
