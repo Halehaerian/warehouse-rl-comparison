@@ -85,6 +85,50 @@ def avg_charging_events(episodes: list) -> float:
         return 0.0
     return sum(e.get("charging_events", 0) for e in episodes) / len(episodes)
 
+def stability_stats(episodes: list, window: int = 200, start_ep: int = 5001) -> dict:
+    second_half = episodes[start_ep - 1:]
+    sr_wins = []
+    for i in range(window - 1, len(second_half)):
+        w = second_half[i - window + 1 : i + 1]
+        sr_wins.append(100 * sum(1 for e in w if e.get("mission_complete", False)) / window)
+    if not sr_wins:
+        return {}
+    import statistics as _st
+    return {
+        "mean_sr": round(_st.mean(sr_wins), 2),
+        "std_sr":  round(_st.stdev(sr_wins), 2),
+        "min_sr":  round(min(sr_wins), 1),
+        "max_sr":  round(max(sr_wins), 1),
+        "dips_below_90": sum(1 for x in sr_wins if x < 90),
+    }
+
+
+def convergence_thresholds(episodes: list, thresholds: list, window: int = 200) -> dict:
+    result = {}
+    for threshold in thresholds:
+        found = None
+        for i in range(window - 1, len(episodes)):
+            w = episodes[i - window + 1 : i + 1]
+            sr = sum(1 for e in w if e.get("mission_complete", False)) / window
+            if sr >= threshold:
+                found = episodes[i]["episode"]
+                break
+        result[threshold] = found
+    return result
+
+
+def milestone_sr(episodes: list, milestones: list, window: int = 200) -> dict:
+    result = {}
+    for m in milestones:
+        idx = m - 1
+        if idx >= len(episodes):
+            result[m] = None
+            continue
+        w = episodes[max(0, idx - window + 1) : idx + 1]
+        result[m] = round(100 * sum(1 for e in w if e.get("mission_complete", False)) / len(w), 1)
+    return result
+
+
 def evaluate_one(path: Path, window: int = 200) -> dict:
     episodes = load_metrics(path)
     base = _algo_base_name(path)
@@ -102,6 +146,8 @@ def evaluate_one(path: Path, window: int = 200) -> dict:
         "avg_deliveries": round(avg_deliveries(episodes), 2),
         "avg_steps_per_delivery": round(avg_steps_per_delivery(episodes), 1),
         "battery_efficiency_pct": round(battery_efficiency(episodes), 1),
+        "avg_battery_left_all": round(sum(e.get("battery_remaining", 0) for e in episodes) / len(episodes), 1),
+        "battery_deaths_count": sum(1 for e in episodes if e.get("battery_dead", False)),
         "avg_charging": round(avg_charging_events(episodes), 2),
         "episodes_to_80pct": ep80 if ep80 is not None else "N/A",
         "mean_reward": round(mean_reward(episodes), 2),
@@ -116,6 +162,10 @@ def evaluate_one(path: Path, window: int = 200) -> dict:
         "last_1000_avg_charging": round(avg_charging_events(last_1000), 2),
         "last_1000_mean_reward": round(mean_reward(last_1000), 2),
         "last_1000_mean_steps": round(mean_steps(last_1000), 1),
+        # Stability & milestones
+        "stability": stability_stats(episodes, window=window),
+        "milestones": milestone_sr(episodes, [500, 1000, 2000, 3000, 5000, 10000], window=window),
+        "convergence": convergence_thresholds(episodes, [0.80, 0.95, 0.99], window=window),
     }
 
 
@@ -266,6 +316,91 @@ def main():
                 f"{r['last_1000_avg_charging']}",
                 f"{r['last_1000_mean_reward']}",
             ))
+
+        # --- Battery Management Table ---
+        print("\n" + "=" * 80)
+        print("Table 3 (Battery Management: full 10,000 episodes)")
+        print("=" * 80)
+        print("{:22} {:>10} {:>10} {:>10} {:>10}".format("Metric", "SAC", "DDQN", "DQN", "PPO"))
+        print("-" * 80)
+        batt_results = {r["algorithm"]: r for r in results if "error" not in r}
+        order = ["sac", "ddqn", "dqn", "ppo"]
+        def bv(key, algo): return batt_results.get(algo, {}).get(key, "N/A")
+        print("{:22} {:>10} {:>10} {:>10} {:>10}".format(
+            "Battery Deaths",
+            *[str(bv("battery_deaths_count", a)) for a in order]))
+        print("{:22} {:>10} {:>10} {:>10} {:>10}".format(
+            "Death Rate",
+            *[str(bv("battery_death_pct", a))+"%" for a in order]))
+        print("{:22} {:>10} {:>10} {:>10} {:>10}".format(
+            "Avg Charges/Ep",
+            *[str(bv("avg_charging", a)) for a in order]))
+        print("{:22} {:>10} {:>10} {:>10} {:>10}".format(
+            "Avg Battery Left",
+            *[str(bv("avg_battery_left_all", a)) for a in order]))
+
+        # --- Stability Table ---
+        print("\n" + "=" * 80)
+        print("Table 4 (Stability: episodes 5,001-10,000, rolling window=200)")
+        print("=" * 80)
+        print("{:10} {:>10} {:>10} {:>12} {:>12} {:>12}".format(
+            "Algorithm", "Mean SR", "Std Dev", "Min Window", "Max Window", "Dips <90%"))
+        print("-" * 80)
+        seen3 = set()
+        for r in results:
+            if "error" in r or r["algorithm"] in seen3:
+                continue
+            seen3.add(r["algorithm"])
+            s = r.get("stability", {})
+            if not s:
+                continue
+            print("{:10} {:>10} {:>10} {:>12} {:>12} {:>12}".format(
+                r["algorithm"].upper(),
+                f"{s['mean_sr']}%",
+                f"{s['std_sr']}%",
+                f"{s['min_sr']}%",
+                f"{s['max_sr']}%",
+                str(s["dips_below_90"]),
+            ))
+
+        # --- Milestones Table ---
+        milestone_cols = [500, 1000, 2000, 3000, 5000, 10000]
+        print("\n" + "=" * 80)
+        print("Table 5 (Milestones: rolling window=200 SR at episode)")
+        print("=" * 80)
+        hdr = "{:10}".format("Algorithm") + "".join(f" {'Ep'+str(m):>10}" for m in milestone_cols)
+        print(hdr)
+        print("-" * 80)
+        seen4 = set()
+        for r in results:
+            if "error" in r or r["algorithm"] in seen4:
+                continue
+            seen4.add(r["algorithm"])
+            m_data = r.get("milestones", {})
+            row = "{:10}".format(r["algorithm"].upper())
+            for m in milestone_cols:
+                val = m_data.get(m)
+                row += f" {(str(val)+'%') if val is not None else 'N/A':>10}"
+            print(row)
+
+        # --- Convergence Table ---
+        conv_thresholds = [0.80, 0.95, 0.99]
+        print("\n" + "=" * 80)
+        print("Table 6 (Convergence: episodes to reach SR threshold, rolling window=200)")
+        print("=" * 80)
+        print("{:10} {:>12} {:>12} {:>12}".format("Algorithm", "80%", "95%", "99%"))
+        print("-" * 80)
+        seen5 = set()
+        for r in results:
+            if "error" in r or r["algorithm"] in seen5:
+                continue
+            seen5.add(r["algorithm"])
+            c = r.get("convergence", {})
+            row = "{:10}".format(r["algorithm"].upper())
+            for t in conv_thresholds:
+                val = c.get(t)
+                row += " {:>12}".format(str(val) if val else "Never")
+            print(row)
 
     if args.out_table:
         out_path = Path(args.out_table)
