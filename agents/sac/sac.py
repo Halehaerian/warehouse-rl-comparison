@@ -5,7 +5,7 @@ import numpy as np
 import random
 import torch.optim as optim
 from agents.sac.buffer import ReplayBuffer
-from agents.sac.networks import ActorNetwork, CriticNetwork, ValueNetwork
+from agents.sac.networks import ActorNetwork, CriticNetwork
 from agents.base import BaseAgent
 
 class SACAgent(BaseAgent):
@@ -18,17 +18,21 @@ class SACAgent(BaseAgent):
         self.n_actions = n_actions
         self.device = device
 
+        # Initialize Networks
         self.actor = ActorNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
         self.critic_1 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
         self.critic_2 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
-        self.value = ValueNetwork(config['lr'], obs_size).to(self.device)
-        self.target_value = ValueNetwork(config['lr'], obs_size).to(self.device)
+        self.target_critic_1 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
+        self.target_critic_2 = CriticNetwork(config['lr'], obs_size, n_actions=n_actions).to(self.device)
+
+        self.target_critic_1.load_state_dict(self.critic_1.state_dict())
+        self.target_critic_2.load_state_dict(self.critic_2.state_dict())
 
         self.update_network_parameters(tau=1)
 
         self.steps = 0
 
-        #Alpha Tuning
+        # Alpha Tuning
         self.target_entropy = -np.log(1.0 / n_actions) * 0.5
         self.log_alpha = T.zeros(1, requires_grad=True, device=self.device)
         self.alpha_opt = optim.Adam([self.log_alpha], lr=config.get("lr", 3e-4))
@@ -52,15 +56,25 @@ class SACAgent(BaseAgent):
         if tau is None:
            tau = self.tau
 
-        target_value_params = self.target_value.named_parameters()
-        value_params = self.value.named_parameters()
+        target_value_params = self.target_critic_1.named_parameters()
+        value_params = self.critic_1.named_parameters()
 
         target_value_state_dict = dict(target_value_params)
         value_state_dict = dict(value_params)
 
         for name in value_state_dict:
             value_state_dict[name] = tau* value_state_dict[name].clone() + (1-tau)*target_value_state_dict[name].clone()
-        self.target_value.load_state_dict(value_state_dict)
+        self.target_critic_1.load_state_dict(value_state_dict)
+
+        target_value_params = self.target_critic_2.named_parameters()
+        value_params = self.critic_2.named_parameters()
+
+        target_value_state_dict = dict(target_value_params)
+        value_state_dict = dict(value_params)
+
+        for name in value_state_dict:
+            value_state_dict[name] = tau* value_state_dict[name].clone() + (1-tau)*target_value_state_dict[name].clone()
+        self.target_critic_2.load_state_dict(value_state_dict)
 
     def update(self, state, action, reward, next_state, done, **kwargs):
         self.memory.store_transition(state, action, reward, next_state, done)
@@ -72,38 +86,49 @@ class SACAgent(BaseAgent):
 
         state, new_state, action, reward, done = self.memory.sample_buffer(self.batch_size)
 
-        reward = T.tensor(reward, dtype=T.float).to(self.device)
-        done = T.tensor(done).to(self.device)
+        reward = T.tensor(reward, dtype=T.float).unsqueeze(1).to(self.device)
+        done = T.tensor(done).unsqueeze(1).to(self.device)
         state_ = T.tensor(new_state, dtype=T.float).to(self.device)
         state = T.tensor(state, dtype=T.float).to(self.device)
         action = T.tensor(action, dtype=T.float).to(self.device)
-        value = self.value(state).view(-1)
-        value_ = self.target_value(state_).view(-1)
-        value_[done] = 0.0
 
-        # Training the Value network
-        _, probs,log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1(state, probs)
-        q2_new_policy = self.critic_2(state, probs)
-        critic_value = T.min(q1_new_policy, q2_new_policy)
+        # Training Value Calculations
+        with T.no_grad():
+            _, probs,log_probs = self.actor.sample(state_)
+            q1_new_policy = self.target_critic_1(state_)
+            q2_new_policy = self.target_critic_2(state_)
+            critic_value = T.min(q1_new_policy, q2_new_policy)
 
-        self.value.optimizer.zero_grad()
-        value_target = probs*(critic_value - self.alpha.detach()*log_probs.squeeze())
-        value_target = value_target.sum(dim=1, keepdim=True).squeeze(1)
-        value_loss = 0.5 * F.mse_loss(value, value_target)
-        value_loss.backward(retain_graph=True)
-        self.value.optimizer.step()
+            value_target = probs*(critic_value - self.alpha.detach()*log_probs.squeeze())
+            value_target = value_target.sum(dim=1, keepdim=True)
+            q_hat = reward + self.gamma*(~done)*value_target
+
+
+        # Training Critic networks
+
+        q1_old_policy = (self.critic_1(state)*action).sum(dim=1, keepdim=True)
+        q2_old_policy = (self.critic_2(state)*action).sum(dim=1, keepdim=True)
+        critic_1_loss = 0.5*F.mse_loss(q1_old_policy, q_hat)
+        critic_2_loss = 0.5*F.mse_loss(q2_old_policy, q_hat)
+
+        critic_loss = critic_1_loss + critic_2_loss
+
+        self.critic_1.optimizer.zero_grad()
+        self.critic_2.optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_1.optimizer.step()
+        self.critic_2.optimizer.step()
 
         # Training the Actor network
         _, probs, log_probs = self.actor.sample(state)
-        q1_new_policy = self.critic_1(state, probs)
-        q2_new_policy = self.critic_2(state, probs)
+        q1_new_policy = self.critic_1(state)
+        q2_new_policy = self.critic_2(state)
         critic_value = T.min(q1_new_policy, q2_new_policy)
+        actor_loss = probs*(self.alpha.detach()*log_probs.squeeze() - critic_value)
+        actor_loss = T.mean(actor_loss.sum(dim=1))
 
         self.actor.optimizer.zero_grad()
-        actor_loss = self.alpha.detach()*log_probs.squeeze() - critic_value
-        actor_loss = T.mean(probs * actor_loss)
-        actor_loss.backward(retain_graph = True)
+        actor_loss.backward()
         self.actor.optimizer.step()
 
         # --- Alpha (entropy) update ---
@@ -113,21 +138,6 @@ class SACAgent(BaseAgent):
         self.alpha_opt.zero_grad()
         alpha_loss.backward()
         self.alpha_opt.step()
-
-
-        # Training Critic networks
-        self.critic_1.optimizer.zero_grad()
-        self.critic_2.optimizer.zero_grad()
-        q_hat = reward + self.gamma*value_
-        q1_old_policy = (self.critic_1(state, action)*action).sum(dim=1, keepdim=True).squeeze(1)
-        q2_old_policy = (self.critic_2(state, action)*action).sum(dim=1, keepdim=True).squeeze(1)
-        critic_1_loss = 0.5*F.mse_loss(q1_old_policy, q_hat)
-        critic_2_loss = 0.5*F.mse_loss(q2_old_policy, q_hat)
-
-        critic_loss = critic_1_loss + critic_2_loss
-        critic_loss.backward()
-        self.critic_1.optimizer.step()
-        self.critic_2.optimizer.step()
 
         self.update_network_parameters()
 
@@ -141,13 +151,13 @@ class SACAgent(BaseAgent):
             "actor": self.actor.state_dict(),
             "critic_1": self.critic_1.state_dict(),
             "critic_2": self.critic_2.state_dict(),
-            "value": self.value.state_dict(),
-            "target_value" : self.target_value.state_dict(),
+            "target_critic_1": self.target_critic_1.state_dict(),
+            "target_critic_2" : self.target_critic_2.state_dict(),
          }
 
     def load_state_dict(self, data):
         self.actor.load_state_dict(data["actor"])
         self.critic_1.load_state_dict(data["critic_1"])
         self.critic_2.load_state_dict(data["critic_2"])
-        self.value.load_state_dict(data["value"])
-        self.target_value.load_state_dict(data["target_value"])
+        self.target_critic_1.load_state_dict(data["target_critic_1"])
+        self.target_critic_2.load_state_dict(data["target_critic_2"])
